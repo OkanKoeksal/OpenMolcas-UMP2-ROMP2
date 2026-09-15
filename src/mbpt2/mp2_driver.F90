@@ -26,12 +26,12 @@ subroutine MP2_Driver(ireturn)
 !                                                                      *
 !       - code using Cholesky vectors directly                         *
 !         October 2004, T. B. Pedersen                                 *
-!         Dept. of Theoretical Chemistry                               *
+!         Dept. of Chemical Physics                                   *
 !         University of Lund, Sweden                                   *
 !                                                                      *
 !       - code for the "Scaled Opposite-Spin" (SOS) MP2                *
 !         May 2007, F. Aquilante                                       *
-!         Dept. of Theoretical Chemistry                               *
+!         Dept. of Chemical Physics                                   *
 !         University of Lund, Sweden                                   *
 !                                                                      *
 !       - code for Laplace-SOS-MP2 for Cholesky/DF                     *
@@ -53,6 +53,7 @@ use Constants, only: Zero, One
 use Definitions, only: wp, iwp, u6
 
 implicit none
+#include "warnings.h"
 integer(kind=iwp), intent(out) :: ireturn
 integer(kind=iwp) :: i, iOpt, iPrc, irc, iSym, iTol, iTst, iType, l_T1, lthCMO, lthEOr, nAsh(8), nDel_tra(8), nFro_tra(8), &
                      nIsh(8), nOccT
@@ -72,6 +73,20 @@ TCPT = seconds()
 ! Check so it is a RHF-SCF reference that is being used.
 ! TBP, November 2012: do not quit, just issue a warning!
 call Get_cArray('Relax Method',Method1,8)
+
+! Dispatch UHF before entering RHF-specific orbital processing.
+if (Method1 == 'UHF-SCF ') then
+  call UMP2_Driver(ireturn)
+  return
+end if
+
+! Prevent a previous UMP2 result from entering the RHF path.
+if (Method1 == 'UMP2    ') then
+  call WarningMessage(2,'Run SCF again before another UMP2 calculation.')
+  ireturn = _RC_INPUT_ERROR_
+  return
+end if
+
 if ((Method1(1:7) /= 'RHF-SCF') .and. (Method1(1:5) /= 'MBPT2')) then
   write(u6,*)
   call WarningMessage(1,'MP2 implementation intended for RHF references only')

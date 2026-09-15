@@ -43,6 +43,13 @@ set (sources
      rhs_mp2.F90
      rhs_mp2_help1.F90
      rhs_mp2_help2.F90
+     ump2_global.F90
+     ump2_driver.F90
+     ump2_read_reference.F90
+     ump2_rdinp.F90
+     ump2_setup_spaces.F90
+     ump2_cholesky_transform.F90
+     ump2_energy.F90
 )
 
 include (${PROJECT_SOURCE_DIR}/cmake/prog_template.cmake)
