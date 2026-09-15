@@ -6,7 +6,9 @@
 ! OpenMolcas is distributed in the hope that it will be useful, but it *
 ! is provided "as is" and without any express or implied warranties.   *
 ! For more details see the full text of the license in the file        *
-! LICENSE or in <http://www.gnu.org/licenses/>.                        *
+! LICENSE or in <http://www.gnu.org/licenses/>.             *
+!                                                                      *
+! Copyright (C) 2026, Okan Koeksal                                 *
 !***********************************************************************
 
 module UMP2_Global
