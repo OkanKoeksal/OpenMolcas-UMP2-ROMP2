@@ -14,6 +14,7 @@ subroutine UMP2_Energy(La,Lb,Eoa,Eva,Eob,Evb, &
                        Eaa,Ebb,Eab,ierr)
 
 use Definitions, only: wp, iwp
+use Para_Info, only: nProcs, MyRank, Is_Real_Par
 
 implicit none
 
@@ -28,64 +29,96 @@ real(kind=wp), intent(in) :: DenTol
 real(kind=wp), intent(out) :: Eaa,Ebb,Eab
 integer(kind=iwp), intent(out) :: ierr
 
-integer(kind=iwp) :: i,j,a,b
-real(kind=wp) :: Coul,Den
+integer(kind=iwp) :: i,j,a,b,PairIndex,LocalErr
+real(kind=wp) :: Coul,Den,WorkE(3)
+logical :: Parallel
 
 Eaa = 0.0_wp
 Ebb = 0.0_wp
 Eab = 0.0_wp
 ierr = 0
+LocalErr = 0
+Parallel = (nProcs > 1) .and. Is_Real_Par()
 
 ! A positive denominator tolerance must be supplied.
-if (DenTol <= 0.0_wp) then
-  ierr = 1
-  return
+if (DenTol <= 0.0_wp) LocalErr = 1
+
+if (LocalErr == 0) then
+  call SameSpin(La,Eoa,Eva,nOA,nVA,Eaa,LocalErr)
 end if
 
-call SameSpin(La,Eoa,Eva,nOA,nVA,Eaa)
-if (ierr /= 0) then
-  call ClearEnergies()
-  return
-end if
-
-call SameSpin(Lb,Eob,Evb,nOB,nVB,Ebb)
-if (ierr /= 0) then
-  call ClearEnergies()
-  return
+if (LocalErr == 0) then
+  call SameSpin(Lb,Eob,Evb,nOB,nVB,Ebb,LocalErr)
 end if
 
 ! Opposite-spin contribution: no exchange term.
-do i=1,nOA
-  do j=1,nOB
-    do a=1,nVA
-      do b=1,nVB
+!
+! MPI-v2 requires La/Lb to contain the COMPLETE globally assembled
+! Cholesky-vector dimension on every rank.  The complete Cholesky-vector
+! dot product is then evaluated on the rank that owns a particular
+! occupied alpha/beta pair.  This preserves the exact serial Cholesky
+! contraction while distributing the expensive excitation loops.
+if (LocalErr == 0) then
+AB_Occupied: do i=1,nOA
+    do j=1,nOB
 
-        Den = Eoa(i)+Eob(j)-Eva(a)-Evb(b)
+      PairIndex = (i-1)*nOB + (j-1)
+      if (Parallel) then
+        if (mod(PairIndex,nProcs) /= MyRank) cycle
+      end if
 
-        if (abs(Den) <= DenTol) then
-          ierr = 2
-          call ClearEnergies()
-          return
-        end if
+      do a=1,nVA
+        do b=1,nVB
 
-        Coul = dot_product(La(a,i,:),Lb(b,j,:))
-        Eab = Eab+Coul*Coul/Den
+          Den = Eoa(i)+Eob(j)-Eva(a)-Evb(b)
 
+          if (abs(Den) <= DenTol) then
+            LocalErr = 2
+            exit AB_Occupied
+          end if
+
+          Coul = dot_product(La(a,i,:),Lb(b,j,:))
+          Eab = Eab+Coul*Coul/Den
+
+        end do
       end do
     end do
-  end do
-end do
+  end do AB_Occupied
+end if
+
+! A denominator failure on any rank invalidates the complete energy.
+! All ranks must participate in this reduction before any rank returns.
+ierr = LocalErr
+if (Parallel) call gaIgOP_SCAL(ierr,'max')
+
+if (ierr /= 0) then
+  call ClearEnergies()
+  return
+end if
+
+! Eaa/Ebb/Eab currently contain rank-local partial sums.  Reduce them
+! to the complete UMP2 spin components on every rank.
+if (Parallel) then
+  WorkE(1) = Eaa
+  WorkE(2) = Ebb
+  WorkE(3) = Eab
+  call GADGOp(WorkE(1),3,'+')
+  Eaa = WorkE(1)
+  Ebb = WorkE(2)
+  Eab = WorkE(3)
+end if
 
 contains
 
-subroutine SameSpin(L,Eo,Ev,nO,nV,Ess)
+subroutine SameSpin(L,Eo,Ev,nO,nV,Ess,Err)
 
   integer(kind=iwp), intent(in) :: nO,nV
   real(kind=wp), intent(in) :: L(nV,nO,nCho)
   real(kind=wp), intent(in) :: Eo(nO),Ev(nV)
   real(kind=wp), intent(out) :: Ess
+  integer(kind=iwp), intent(inout) :: Err
 
-  integer(kind=iwp) :: ii,jj,aa,bb
+  integer(kind=iwp) :: ii,jj,aa,bb,Pair
   real(kind=wp) :: Jint,Kint,Delta,Anti
 
   Ess = 0.0_wp
@@ -93,9 +126,14 @@ subroutine SameSpin(L,Eo,Ev,nO,nV,Ess)
   ! No same-spin double excitations in these cases.
   if ((nO < 2) .or. (nV < 2)) return
 
-  do ii=1,nO
+SS_Occupied: do ii=1,nO
     do jj=1,nO
       if (ii == jj) cycle
+
+      Pair = (ii-1)*nO + (jj-1)
+      if (Parallel) then
+        if (mod(Pair,nProcs) /= MyRank) cycle
+      end if
 
       do aa=1,nV
         do bb=1,nV
@@ -104,8 +142,8 @@ subroutine SameSpin(L,Eo,Ev,nO,nV,Ess)
           Delta = Eo(ii)+Eo(jj)-Ev(aa)-Ev(bb)
 
           if (abs(Delta) <= DenTol) then
-            ierr = 2
-            return
+            Err = 2
+            exit SS_Occupied
           end if
 
           Jint = dot_product(L(aa,ii,:),L(bb,jj,:))
@@ -118,7 +156,7 @@ subroutine SameSpin(L,Eo,Ev,nO,nV,Ess)
         end do
       end do
     end do
-  end do
+  end do SS_Occupied
 
 end subroutine SameSpin
 

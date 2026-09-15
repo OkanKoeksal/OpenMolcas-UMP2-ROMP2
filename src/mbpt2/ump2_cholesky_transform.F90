@@ -48,6 +48,12 @@ subroutine UMP2_Transform_AO_Batch(LAO,La,Lb,ierr,Message)
   ! The same vector batch and ordering are used for both spins.
   ! Frozen occupied orbitals are excluded from the transformation.
   !
+  ! This transformation is intentionally rank-local. In MPI-v2 each
+  ! rank transforms only its locally owned AO Cholesky vectors into its
+  ! assigned global P slice. The driver subsequently uses GADGOp to
+  ! assemble the complete transformed vector set on every rank before
+  ! UMP2_Energy distributes excitation pairs across ranks.
+  !
   ! The caller allocates La and Lb before calling this routine.
   ! A module interface is required because the arrays are assumed-shape.
 

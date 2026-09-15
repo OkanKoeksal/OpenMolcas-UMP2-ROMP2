@@ -17,12 +17,16 @@ implicit none
 private
 
 ! ---------------------------------------------------------------------
-! Initial implementation:
+! Current implementation:
 !   Canonical UHF reference
 !   C1 symmetry
-!   Serial Cholesky energy evaluation
+!   Serial or MPI-v2 Cholesky energy evaluation
 !   Explicit frozen-core count
 !   No additional virtual deletion, densities, or gradients
+!
+! MPI-v2 keeps no MPI state here. Para_Info remains the source of rank
+! information, and UMP2_Driver assembles complete replicated transformed
+! Cholesky-vector arrays before UMP2_Energy is called.
 ! ---------------------------------------------------------------------
 
 ! Dimensions of the reference.
