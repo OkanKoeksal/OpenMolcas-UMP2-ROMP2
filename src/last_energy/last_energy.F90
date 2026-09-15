@@ -17,7 +17,7 @@ use Definitions, only: iwp, u6
 implicit none
 integer(kind=iwp), intent(out) :: iReturn
 integer(kind=iwp) :: iOption, lengthlast
-character(len=8) :: Method
+character(len=8) :: Method, FinalMethod
 logical(kind=iwp) :: Do_ESPF, Do_FFPT, StandAlone, FoundLastEn
 !                                                                      *
 !***********************************************************************
@@ -44,6 +44,7 @@ if ((Method(5:7) /= 'SCF') .and. &
     (Method(1:6) /= 'RASSCF') .and. &
     (Method(1:6) /= 'CASPT2') .and. &
     (Method(1:5) /= 'MBPT2') .and. &
+    (Method /= 'UMP2    ') .and. &
     (Method(1:5) /= 'CCSDT') .and. &
     (Method(1:4) /= 'CHCC') .and. &
     (Method(1:6) /= 'MCPDFT') .and. &
@@ -105,6 +106,7 @@ end if
 if (((Method(5:7) == 'SCF') .and. (Method(1:4) /= 'DMRG')) .or. &
     (Method(1:6) == 'KS-DFT') .or. &
     (Method(1:5) == 'MBPT2') .or. &
+    (Method == 'UMP2    ') .or. &
     (Method(1:4) == 'CHCC') .or. &
     (Method(1:4) == 'CHT3')) then
   call StartLight('scf')
@@ -153,7 +155,15 @@ else if (Method(1:8) == 'EXTERNAL') then
   end if
 end if
 
-if (Method(1:5) == 'MBPT2') then
+! UMP2 is implemented inside MBPT2 and requires a fresh UHF reference.
+if ((Method(1:5) == 'MBPT2') .or. (Method == 'UMP2    ')) then
+  if (Method == 'UMP2    ') then
+    call Get_cArray('Relax Method',FinalMethod,8)
+    if (FinalMethod /= 'UHF-SCF ') then
+      write(u6,*) 'Last_Energy: UMP2 requires a UHF-SCF reference; actual method: ',FinalMethod
+      call Abend()
+    end if
+  end if
   call StartLight('mbpt2')
   call Disable_Spool()
   call MP2_Driver(iReturn)
@@ -161,6 +171,13 @@ if (Method(1:5) == 'MBPT2') then
     write(u6,*) 'Last_Energy failed ...'
     write(u6,*) 'MBPT2 returned with return code, rc = ',iReturn
     call Abend()
+  end if
+  if (Method == 'UMP2    ') then
+    call Get_cArray('Relax Method',FinalMethod,8)
+    if (FinalMethod /= 'UMP2    ') then
+      write(u6,*) 'Last_Energy: MBPT2 did not produce a UMP2 energy; actual method: ',FinalMethod
+      call Abend()
+    end if
   end if
 end if
 

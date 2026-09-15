@@ -17,7 +17,6 @@ subroutine UMP2_Driver(ireturn)
 use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Definitions, only: wp, iwp, u6
 use Para_Info, only: nProcs, MyRank, Is_Real_Par
-use UnixInfo, only: SuperName
 use Data_Structures, only: SBA_Type, Allocate_DT, Deallocate_DT
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
 use Cholesky, only: NumCho, nDimRS, ChoNSym => nSym, ChoNBas => nBas
@@ -74,13 +73,10 @@ if (Parallel) nWorkers = nProcs
 
 call UMP2_Clean()
 
-! Generic EMIL DO/WHILE loops are allowed. Numerical gradients are
-! still unavailable because the present implementation is energy only.
-if (index(SuperName,'numerical_gradient') == 1) then
-  call Fail(_RC_NOT_AVAILABLE_, &
-            'UMP2 numerical gradients are not implemented.')
-  return
-end if
+! Energy evaluations are also allowed at displaced geometries.
+! NUMERICAL_GRADIENT disables real parallelism inside each displacement;
+! the existing Is_Real_Par guards select the local serial energy path.
+! Analytic UMP2 densities and gradients are not computed here.
 
 call UMP2_Read_Reference(ierr,Message)
 if (ierr /= 0) then

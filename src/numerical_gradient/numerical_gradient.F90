@@ -40,7 +40,7 @@ logical(kind=iwp) :: DispX, DispY, DispZ, Do_ESPF, Do_FFPT, DoDirect, DoFirst, D
 character(len=LenIn) :: Namei
 character(len=180) :: Line
 character(len=10) :: ESPFKey
-character(len=8) :: Method
+character(len=8) :: Method, DisplacedMethod
 integer(kind=iwp), allocatable :: IsMM(:)
 real(kind=wp), allocatable :: AllC(:,:), BMtrx(:,:), C(:,:), Coor(:,:), Deg(:,:), Disp(:), Energies_Ref(:), EnergyArray(:,:), &
                               GNew(:), Grad(:), GradArray(:,:), Mltp(:), MMGrd(:,:), OldGrads(:,:), Tmp(:,:), Tmp2(:), TMtrx(:,:), &
@@ -232,6 +232,7 @@ if ((Method(5:7) == 'SCF') .or. &
     (Method(1:6) == 'GASSCF') .or. &
     (Method(1:6) == 'CASPT2') .or. &
     (Method(1:5) == 'MBPT2') .or. &
+    (Method == 'UMP2    ') .or. &
     (Method(1:5) == 'CCSDT') .or. &
     (Method(1:4) == 'CHCC') .or. &
     (Method(1:6) == 'MCPDFT') .or. &
@@ -604,6 +605,7 @@ do
   if ((Method(5:7) == 'SCF') .or. &
       (Method(1:6) == 'KS-DFT') .or. &
       (Method(1:5) == 'MBPT2') .or. &
+      (Method == 'UMP2    ') .or. &
       (Method(1:4) == 'CHCC') .or. &
       (Method(1:4) == 'CHT3')) then
     call StartLight('scf')
@@ -648,7 +650,18 @@ do
     end if
   end if
 
-  if (Method(1:5) == 'MBPT2') then
+  ! UMP2 uses the same module and MBPT2INP as restricted MP2.
+  ! Verify that displaced SCF restored the unrestricted reference;
+  ! never force the marker or substitute an RHF energy silently.
+  if ((Method(1:5) == 'MBPT2') .or. (Method == 'UMP2    ')) then
+    if (Method == 'UMP2    ') then
+      call Get_cArray('Relax Method',DisplacedMethod,8)
+      if (DisplacedMethod /= 'UHF-SCF ') then
+        write(LuWr,*) 'Numerical_Gradient: UMP2 requires UHF-SCF at every displacement.'
+        write(LuWr,*) 'Displacement and actual method: ',iDisp,DisplacedMethod
+        call Abend()
+      end if
+    end if
     call StartLight('mbpt2')
     call init_run_use()
     call Disable_Spool()
@@ -658,6 +671,14 @@ do
       write(LuWr,*) 'MBPT2 returned with return code, rc = ',iReturn
       write(LuWr,*) 'for the perturbation iDisp = ',iDisp
       call Abend()
+    end if
+    if (Method == 'UMP2    ') then
+      call Get_cArray('Relax Method',DisplacedMethod,8)
+      if (DisplacedMethod /= 'UMP2    ') then
+        write(LuWr,*) 'Numerical_Gradient: displaced MBPT2 did not produce a UMP2 energy.'
+        write(LuWr,*) 'Displacement and actual method: ',iDisp,DisplacedMethod
+        call Abend()
+      end if
     end if
   end if
 
