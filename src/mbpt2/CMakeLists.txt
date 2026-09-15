@@ -50,6 +50,7 @@ set (sources
      ump2_setup_spaces.F90
      ump2_cholesky_transform.F90
      ump2_energy.F90
+     ump2_conventional.F90
 )
 
 include (${PROJECT_SOURCE_DIR}/cmake/prog_template.cmake)

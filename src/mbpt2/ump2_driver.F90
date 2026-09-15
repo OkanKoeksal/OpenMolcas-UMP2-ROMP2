@@ -25,6 +25,7 @@ use UMP2_Global, only: UMP2_Clean, nSym, nBas, nOccA, nOccB, nFro, &
                        DoCholesky, DenTol, ESCF, EAA, EBB, EAB, ECorr, &
                        ETotal, EnergyReady
 use UMP2_Cholesky_Transform, only: UMP2_Transform_AO_Batch
+use UMP2_Conventional, only: UMP2_Conventional_Energy
 
 implicit none
 #include "warnings.h"
@@ -98,14 +99,21 @@ end if
 
 call DecideOnCholesky(DoCholesky)
 call DecideOnDF(IsDF)
-if ((.not. DoCholesky) .or. IsDF) then
+if (IsDF) then
   call Fail(_RC_NOT_AVAILABLE_, &
-            'UMP2 requires SEWARD Cholesky; conventional and RI runs are unsupported.')
+            'UMP2 RI integrals are unsupported; use Cholesky or conventional stored AO integrals.')
+  return
+end if
+
+if ((.not. DoCholesky) .and. (nProcs /= 1)) then
+  call Fail(_RC_NOT_AVAILABLE_,'Conventional UMP2 currently requires pymolcas -np 1.')
   return
 end if
 
 if (MyRank == 0) then
-  if (Parallel) then
+  if (.not. DoCholesky) then
+    write(u6,'(/,A)') ' Canonical UMP2: serial C1 conventional stored-AO energy'
+  else if (Parallel) then
     write(u6,'(/,A)') ' Canonical UMP2: MPI-v2 C1 Cholesky energy'
     write(u6,'(A,I8)') ' MPI processes:                            ',nProcs
   else
@@ -118,210 +126,219 @@ if (MyRank == 0) then
   write(u6,'(A,2I8)') ' Virtual orbitals (A,B):                  ',nVA,nVB
 end if
 
-! Initialize the OpenMolcas Cholesky interface. In a real MPI run the
-! Cholesky layer exposes only the vectors owned by the current rank.
-call Cho_X_Init(ierr,0.0_wp)
-if (ierr /= 0) then
-  if (MyRank == 0) &
-    write(u6,'(A,I8)') ' UMP2: Cho_X_Init failed, return code ',ierr
-  call UMP2_Clean()
-  call Quit(_RC_CHO_INI_)
-  return
-end if
-ChoReady = .true.
-
-if ((ChoNSym /= 1) .or. (ChoNBas(1) /= nBas)) then
-  call Fail(_RC_CHO_INI_, &
-            'Cholesky and UHF reference dimensions disagree.')
-  return
-end if
-
-nChoLocal = NumCho(1)
-if (nChoLocal < 0) then
-  call Fail(_RC_CHO_INI_,'Invalid local Cholesky-vector count.')
-  return
-end if
-
-! Collect the local vector counts on every rank. The resulting rank-block
-! layout defines the global P ordering used by both spin transformations.
-call mma_allocate(ChoCounts,nWorkers,label='UMP2 Cholesky counts')
-ChoCounts = 0
-
-if (Parallel) then
-  ChoCounts(MyRank+1) = nChoLocal
-  call gaIgOP(ChoCounts(1),nWorkers,'+')
+if (.not. DoCholesky) then
+  call UMP2_Conventional_Energy(ierr,Message)
+  if (ierr /= 0) then
+    call Fail(ierr,Message)
+    return
+  end if
 else
-  ChoCounts(1) = nChoLocal
-end if
-
-nChoGlobal = sum(ChoCounts)
-if (nChoGlobal <= 0) then
-  call Fail(_RC_CHO_INI_,'The global Cholesky-vector count is zero.')
-  return
-end if
-
-ChoOffset = 0
-if (Parallel .and. (MyRank > 0)) then
-  ChoOffset = sum(ChoCounts(1:MyRank))
-end if
-
-nChoMin = minval(ChoCounts)
-nChoMax = maxval(ChoCounts)
-
-if (.not. allocated(nDimRS)) then
-  call Fail(_RC_CHO_INI_, &
-            'Cholesky reduced-set dimensions are missing.')
-  return
-end if
-
-if ((size(nDimRS,1) < 1) .or. (size(nDimRS,2) < 1)) then
-  call Fail(_RC_CHO_INI_, &
-            'Invalid Cholesky reduced-set dimensions.')
-  return
-end if
-
-nRead = maxval(nDimRS(1,:))
-if (nRead <= 0) then
-  call Fail(_RC_CHO_INI_,'Empty Cholesky reduced sets.')
-  return
-end if
-
-! La/Lb are GLOBAL replicated arrays in MPI-v2. Check their complete
-! per-rank memory requirement rather than the local Cholesky count.
-NAElements = real(nVA,wp)*real(nOA,wp)*real(nChoGlobal,wp)
-NBElements = real(nVB,wp)*real(nOB,wp)*real(nChoGlobal,wp)
-
-if (max(NAElements,NBElements,real(nBas,wp)**2) > &
-    real(huge(nRead)-1,wp)/real(storage_size(0.0_wp),wp)) then
-  call Fail(_RC_MEMORY_ERROR_, &
-            'UMP2 array dimensions exceed the supported integer indexing range.')
-  return
-end if
-
-Required = NAElements+NBElements+real(nRead,wp) &
-           +6.0_wp*real(nBas,wp)**2 &
-           +3.0_wp*real(nBas,wp)*real(max(1,nOA,nOB),wp)
-
-call mma_maxDBLE(Available)
-
-if (Required > 0.75_wp*real(Available,wp)) then
-  if (MyRank == 0) then
-    write(u6,'(A,ES16.6)') &
-      ' Estimated UMP2 working storage (real words): ',Required
-    write(u6,'(A,I16)') &
-      ' Available real words:                      ',Available
+  ! Initialize the OpenMolcas Cholesky interface. In a real MPI run the
+  ! Cholesky layer exposes only the vectors owned by the current rank.
+  call Cho_X_Init(ierr,0.0_wp)
+  if (ierr /= 0) then
+    if (MyRank == 0) &
+      write(u6,'(A,I8)') ' UMP2: Cho_X_Init failed, return code ',ierr
+    call UMP2_Clean()
+    call Quit(_RC_CHO_INI_)
+    return
   end if
-  call Fail(_RC_MEMORY_ERROR_, &
-            'Insufficient memory for replicated MPI-v2 UMP2 vectors.')
-  return
-end if
+  ChoReady = .true.
 
-call mma_allocate(La,nVA,nOA,nChoGlobal,label='UMP2 global La')
-call mma_allocate(Lb,nVB,nOB,nChoGlobal,label='UMP2 global Lb')
-call mma_allocate(RedVec,nRead,label='UMP2 reduced vector')
+  if ((ChoNSym /= 1) .or. (ChoNBas(1) /= nBas)) then
+    call Fail(_RC_CHO_INI_, &
+              'Cholesky and UHF reference dimensions disagree.')
+    return
+  end if
 
-! Nonlocal rank blocks must be exactly zero before the global sum.
-La = 0.0_wp
-Lb = 0.0_wp
+  nChoLocal = NumCho(1)
+  if (nChoLocal < 0) then
+    call Fail(_RC_CHO_INI_,'Invalid local Cholesky-vector count.')
+    return
+  end if
 
-! Case 0 gives A2(nBas*nBas,1) and A3(nBas,nBas,1) aliases.
-! Allocate_SBA does NOT initialize ipOff: set it explicitly.
-Dims(1) = nBas
-call Allocate_DT(AO,Dims,Dims,1,1,1,0,Label='UMP2 full AO vector')
-HaveAO = .true.
-AO%ipOff = 1
-Skip = 0
-Skip(1) = 1
-iRedC = -1
+  ! Collect the local vector counts on every rank. The resulting rank-block
+  ! layout defines the global P ordering used by both spin transformations.
+  call mma_allocate(ChoCounts,nWorkers,label='UMP2 Cholesky counts')
+  ChoCounts = 0
 
-if (MyRank == 0) then
-  write(u6,'(A,I8)') ' Cholesky vectors (global):              ',nChoGlobal
   if (Parallel) then
-    write(u6,'(A,2I8)') &
-      ' Cholesky vectors/rank (min,max):          ',nChoMin,nChoMax
+    ChoCounts(MyRank+1) = nChoLocal
+    call gaIgOP(ChoCounts(1),nWorkers,'+')
+  else
+    ChoCounts(1) = nChoLocal
   end if
-end if
 
-! Each rank reads and transforms only its locally owned Cholesky vectors.
-! The result is written directly into that rank's disjoint global slice.
-!
-! Do not return from inside this loop in a real MPI run. A local read or
-! transform error is reduced after the loop so all ranks reach the same
-! collective before cleanup.
-LocalVectorErr = 0
+  nChoGlobal = sum(ChoCounts)
+  if (nChoGlobal <= 0) then
+    call Fail(_RC_CHO_INI_,'The global Cholesky-vector count is zero.')
+    return
+  end if
 
-do iVec=1,nChoLocal
+  ChoOffset = 0
+  if (Parallel .and. (MyRank > 0)) then
+    ChoOffset = sum(ChoCounts(1:MyRank))
+  end if
 
-  GlobalVec = ChoOffset+iVec
+  nChoMin = minval(ChoCounts)
+  nChoMax = maxval(ChoCounts)
 
-  call Cho_X_getVfull(ierr,RedVec,nRead,iVec,1,1,2, &
-                      iRedC,AO,Skip,.true.)
+  if (.not. allocated(nDimRS)) then
+    call Fail(_RC_CHO_INI_, &
+              'Cholesky reduced-set dimensions are missing.')
+    return
+  end if
+
+  if ((size(nDimRS,1) < 1) .or. (size(nDimRS,2) < 1)) then
+    call Fail(_RC_CHO_INI_, &
+              'Invalid Cholesky reduced-set dimensions.')
+    return
+  end if
+
+  nRead = maxval(nDimRS(1,:))
+  if (nRead <= 0) then
+    call Fail(_RC_CHO_INI_,'Empty Cholesky reduced sets.')
+    return
+  end if
+
+  ! La/Lb are GLOBAL replicated arrays in MPI-v2. Check their complete
+  ! per-rank memory requirement rather than the local Cholesky count.
+  NAElements = real(nVA,wp)*real(nOA,wp)*real(nChoGlobal,wp)
+  NBElements = real(nVB,wp)*real(nOB,wp)*real(nChoGlobal,wp)
+
+  if (max(NAElements,NBElements,real(nBas,wp)**2) > &
+      real(huge(nRead)-1,wp)/real(storage_size(0.0_wp),wp)) then
+    call Fail(_RC_MEMORY_ERROR_, &
+              'UMP2 array dimensions exceed the supported integer indexing range.')
+    return
+  end if
+
+  Required = NAElements+NBElements+real(nRead,wp) &
+             +6.0_wp*real(nBas,wp)**2 &
+             +3.0_wp*real(nBas,wp)*real(max(1,nOA,nOB),wp)
+
+  call mma_maxDBLE(Available)
+
+  if (Required > 0.75_wp*real(Available,wp)) then
+    if (MyRank == 0) then
+      write(u6,'(A,ES16.6)') &
+        ' Estimated UMP2 working storage (real words): ',Required
+      write(u6,'(A,I16)') &
+        ' Available real words:                      ',Available
+    end if
+    call Fail(_RC_MEMORY_ERROR_, &
+              'Insufficient memory for replicated MPI-v2 UMP2 vectors.')
+    return
+  end if
+
+  call mma_allocate(La,nVA,nOA,nChoGlobal,label='UMP2 global La')
+  call mma_allocate(Lb,nVB,nOB,nChoGlobal,label='UMP2 global Lb')
+  call mma_allocate(RedVec,nRead,label='UMP2 reduced vector')
+
+  ! Nonlocal rank blocks must be exactly zero before the global sum.
+  La = 0.0_wp
+  Lb = 0.0_wp
+
+  ! Case 0 gives A2(nBas*nBas,1) and A3(nBas,nBas,1) aliases.
+  ! Allocate_SBA does NOT initialize ipOff: set it explicitly.
+  Dims(1) = nBas
+  call Allocate_DT(AO,Dims,Dims,1,1,1,0,Label='UMP2 full AO vector')
+  HaveAO = .true.
+  AO%ipOff = 1
+  Skip = 0
+  Skip(1) = 1
+  iRedC = -1
+
+  if (MyRank == 0) then
+    write(u6,'(A,I8)') ' Cholesky vectors (global):              ',nChoGlobal
+    if (Parallel) then
+      write(u6,'(A,2I8)') &
+        ' Cholesky vectors/rank (min,max):          ',nChoMin,nChoMax
+    end if
+  end if
+
+  ! Each rank reads and transforms only its locally owned Cholesky vectors.
+  ! The result is written directly into that rank's disjoint global slice.
+  !
+  ! Do not return from inside this loop in a real MPI run. A local read or
+  ! transform error is reduced after the loop so all ranks reach the same
+  ! collective before cleanup.
+  LocalVectorErr = 0
+
+  do iVec=1,nChoLocal
+
+    GlobalVec = ChoOffset+iVec
+
+    call Cho_X_getVfull(ierr,RedVec,nRead,iVec,1,1,2, &
+                        iRedC,AO,Skip,.true.)
+
+    if (ierr /= 0) then
+      write(u6,'(A,I6,A,3I10)') &
+        ' UMP2 rank ',MyRank,' vector/read error (local,global,rc): ', &
+        iVec,GlobalVec,ierr
+      LocalVectorErr = 1
+      exit
+    end if
+
+    call UMP2_Transform_AO_Batch(AO%SB(1)%A3, &
+                                 La(:,:,GlobalVec:GlobalVec), &
+                                 Lb(:,:,GlobalVec:GlobalVec), &
+                                 ierr,Message)
+
+    if (ierr /= 0) then
+      write(u6,'(A,I6,A,A)') &
+        ' UMP2 rank ',MyRank,' transformation error: ',trim(Message)
+      LocalVectorErr = 2
+      exit
+    end if
+
+  end do
+
+  if (Parallel) call gaIgOP_SCAL(LocalVectorErr,'max')
+
+  if (LocalVectorErr /= 0) then
+    call Fail(_RC_IO_ERROR_READ_, &
+              'A local Cholesky-vector read or transformation failed.')
+    return
+  end if
+
+  ! Reconstruct the complete transformed Cholesky-vector set on every rank.
+  ! Each global P slice is nonzero on exactly one owning rank and zero on
+  ! all other ranks, so an elementwise global sum is equivalent to an
+  ! all-gather of the transformed vectors.
+  if (Parallel) then
+
+    if ((nVA > 0) .and. (nOA > 0) .and. (nChoGlobal > 0)) then
+      call GADGOp(La(1,1,1),size(La),'+')
+    end if
+
+    if ((nVB > 0) .and. (nOB > 0) .and. (nChoGlobal > 0)) then
+      call GADGOp(Lb(1,1,1),size(Lb),'+')
+    end if
+
+  end if
+
+  if ((.not. all(ieee_is_finite(La))) .or. &
+      (.not. all(ieee_is_finite(Lb)))) then
+    call Fail(_RC_GENERAL_ERROR_, &
+              'Nonfinite globally assembled transformed Cholesky vectors.')
+    return
+  end if
+
+  ! Every rank now owns the complete transformed P dimension. Therefore the
+  ! MPI-v1 occupied-pair work sharing in UMP2_Energy is mathematically valid.
+  call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB, &
+                   nOA,nVA,nOB,nVB,nChoGlobal,DenTol, &
+                   EAA,EBB,EAB,ierr)
 
   if (ierr /= 0) then
-    write(u6,'(A,I6,A,3I10)') &
-      ' UMP2 rank ',MyRank,' vector/read error (local,global,rc): ', &
-      iVec,GlobalVec,ierr
-    LocalVectorErr = 1
-    exit
+    if (MyRank == 0) &
+      write(u6,'(A,I8)') ' UMP2 energy-kernel return code: ',ierr
+    call Fail(_RC_GENERAL_ERROR_, &
+              'UMP2 energy evaluation failed; check orbital-energy denominators.')
+    return
   end if
 
-  call UMP2_Transform_AO_Batch(AO%SB(1)%A3, &
-                               La(:,:,GlobalVec:GlobalVec), &
-                               Lb(:,:,GlobalVec:GlobalVec), &
-                               ierr,Message)
-
-  if (ierr /= 0) then
-    write(u6,'(A,I6,A,A)') &
-      ' UMP2 rank ',MyRank,' transformation error: ',trim(Message)
-    LocalVectorErr = 2
-    exit
-  end if
-
-end do
-
-if (Parallel) call gaIgOP_SCAL(LocalVectorErr,'max')
-
-if (LocalVectorErr /= 0) then
-  call Fail(_RC_IO_ERROR_READ_, &
-            'A local Cholesky-vector read or transformation failed.')
-  return
-end if
-
-! Reconstruct the complete transformed Cholesky-vector set on every rank.
-! Each global P slice is nonzero on exactly one owning rank and zero on
-! all other ranks, so an elementwise global sum is equivalent to an
-! all-gather of the transformed vectors.
-if (Parallel) then
-
-  if ((nVA > 0) .and. (nOA > 0) .and. (nChoGlobal > 0)) then
-    call GADGOp(La(1,1,1),size(La),'+')
-  end if
-
-  if ((nVB > 0) .and. (nOB > 0) .and. (nChoGlobal > 0)) then
-    call GADGOp(Lb(1,1,1),size(Lb),'+')
-  end if
-
-end if
-
-if ((.not. all(ieee_is_finite(La))) .or. &
-    (.not. all(ieee_is_finite(Lb)))) then
-  call Fail(_RC_GENERAL_ERROR_, &
-            'Nonfinite globally assembled transformed Cholesky vectors.')
-  return
-end if
-
-! Every rank now owns the complete transformed P dimension. Therefore the
-! MPI-v1 occupied-pair work sharing in UMP2_Energy is mathematically valid.
-call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB, &
-                 nOA,nVA,nOB,nVB,nChoGlobal,DenTol, &
-                 EAA,EBB,EAB,ierr)
-
-if (ierr /= 0) then
-  if (MyRank == 0) &
-    write(u6,'(A,I8)') ' UMP2 energy-kernel return code: ',ierr
-  call Fail(_RC_GENERAL_ERROR_, &
-            'UMP2 energy evaluation failed; check orbital-energy denominators.')
-  return
 end if
 
 ECorr = EAA+EBB+EAB
@@ -358,7 +375,8 @@ call Store_Energies(1,[ETotal],1)
 call Put_cArray('Relax Method','UMP2    ',8)
 call Put_iScalar('mp2prpt',0)
 
-iTol = Cho_X_GetTol(8)
+iTol = 8
+if (DoCholesky) iTol = Cho_X_GetTol(8)
 
 call Add_Info('E_MP2',[ETotal],1,iTol)
 call Add_Info('E_UMP2_AA',[EAA],1,iTol)
