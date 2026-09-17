@@ -80,6 +80,18 @@ if (Method1 == 'UHF-SCF ') then
   return
 end if
 
+! Initial ROMP2 accepts only the determinant RASSCF subset; the reader
+! rejects multiconfigurational references rather than using RHF equations.
+if ((Method1 == 'CASSCF  ') .or. (Method1 == 'RASSCF  ')) then
+  call ROMP2_Driver(ireturn)
+  return
+end if
+if (Method1 == 'ROMP2   ') then
+  call WarningMessage(2,'Run determinant RASSCF again before another ROMP2 calculation.')
+  ireturn = _RC_INPUT_ERROR_
+  return
+end if
+
 ! Prevent a previous UMP2 result from entering the RHF path.
 if (Method1 == 'UMP2    ') then
   call WarningMessage(2,'Run SCF again before another UMP2 calculation.')

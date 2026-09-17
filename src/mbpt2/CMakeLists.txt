@@ -51,6 +51,10 @@ set (sources
      ump2_cholesky_transform.F90
      ump2_energy.F90
      ump2_conventional.F90
+     romp2_cholesky.F90
+     romp2_reference.F90
+     romp2_semicanonical.F90
+     romp2_driver.F90
 )
 
 include (${PROJECT_SOURCE_DIR}/cmake/prog_template.cmake)

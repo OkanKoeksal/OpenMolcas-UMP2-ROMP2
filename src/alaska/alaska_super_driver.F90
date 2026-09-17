@@ -55,6 +55,11 @@ call Chk_Numerical(LuSpool,Numerical)
 ! case.
 
 call Get_cArray('Relax Method',Method,8)
+if (Method == 'ROMP2   ') then
+  call WarningMessage(2,'Initial ROMP2 is single-point only; gradients are not implemented.')
+  iRC = _RC_NOT_AVAILABLE_
+  return
+end if
 call Get_iScalar('Columbus',Columbus)
 !                                                                      *
 !***********************************************************************
