@@ -14,6 +14,8 @@
 module ROMP2_Reference
 use Definitions, only: wp, iwp, u6
 use UMP2_Global
+use ROMP2_Parallel
+use Para_Info, only: nProcs,MyRank
 use ROMP2_Cholesky, only: ROMP2_Cho_Fock
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
 use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
@@ -22,25 +24,23 @@ private
 public :: ROMP2_Read, ROMP2_Fock
 contains
 subroutine ROMP2_Read(ierr,Message)
-  use Para_Info, only: nProcs
   integer(kind=iwp), intent(out) :: ierr
   character(len=*), intent(out) :: Message
   integer(kind=iwp) :: nd(1),ns(1),nf(1),nv(1),nb(1),mult,nel,l
   logical(kind=iwp) :: found,df
   character(len=8) :: method
   ierr=1
-  Message='ROMP2 requires serial C1 high-spin determinant RASSCF with conventional or Cholesky integrals.'
-  if (nProcs/=1) return
+  Message='ROMP2 requires C1 high-spin determinant RASSCF with conventional or Cholesky integrals.'
   call Get_cArray('Relax Method',method,8)
-  if ((method/='CASSCF  ').and.(method/='RASSCF  ')) return
+  if (ROMP2_Any((method/='CASSCF  ').and.(method/='RASSCF  '))) return
   call DecideOnCholesky(DoCholesky)
   call DecideOnDF(df)
-  if (df) then
+  if (ROMP2_Any(df)) then
     Message='ROMP2 RI/DF integrals are unsupported; use Cholesky or conventional integrals.'
     return
   end if
   call Get_iScalar('nSym',nSym)
-  if (nSym/=1) return
+  if (ROMP2_Any(nSym/=1)) return
   call Get_iArray('nBas',nb,1)
   call Get_iArray('nIsh',nd,1)
   call Get_iArray('nAsh',ns,1)
@@ -50,17 +50,17 @@ subroutine ROMP2_Read(ierr,Message)
   call Get_iScalar('nActel',nel)
   ! CAS(nOpen,nOpen), maximum spin: exactly one determinant.
   ! Frozen/deleted RASSCF orbitals are excluded in this first version.
-  if ((nf(1)/=0).or.(nv(1)/=0)) return
-  if ((ns(1)<0).or.(nd(1)<0).or.(nel/=ns(1)).or.(mult/=ns(1)+1)) return
+  if (ROMP2_Any((nf(1)/=0).or.(nv(1)/=0))) return
+  if (ROMP2_Any((ns(1)<0).or.(nd(1)<0).or.(nel/=ns(1)).or.(mult/=ns(1)+1))) return
   nBas=nb(1)
   nOrb=nBas
   nOccA=nd(1)+ns(1)
   nOccB=nd(1)
-  if ((nBas<1).or.(nOccA>nBas)) return
-  if (real(nBas,wp)**2>=real(huge(l),wp)/2.0_wp) return
+  if (ROMP2_Any((nBas<1).or.(nOccA>nBas))) return
+  if (ROMP2_Any(real(nBas,wp)**2>=real(huge(l),wp)/2.0_wp)) return
   call qpg_dArray('RASSCF orbitals',found,l)
-  if (.not.found) return
-  if (l/=nBas*nBas) return
+  if (ROMP2_Any(.not.found)) return
+  if (ROMP2_Any(l/=nBas*nBas)) return
   call mma_allocate(CAlpha,nBas,nOrb,label='ROMP2 alpha orbitals')
   call mma_allocate(CBeta,nBas,nOrb,label='ROMP2 beta orbitals')
   call mma_allocate(EOrbA,nOrb,label='ROMP2 alpha energies')
@@ -68,7 +68,9 @@ subroutine ROMP2_Read(ierr,Message)
   call Get_dArray('RASSCF orbitals',CAlpha,nBas*nBas)
   CBeta=CAlpha
   call Get_dScalar('Last energy',ESCF)
-  if ((.not.all(ieee_is_finite(CAlpha))).or.(.not.ieee_is_finite(ESCF))) return
+  if (ROMP2_Any(logical( &
+      (.not.all(ieee_is_finite(CAlpha))).or.(.not.ieee_is_finite(ESCF)), &
+      kind=kind(.true.)))) return
   ReferenceMethod='ROHF    '
   ierr=0
   Message=''
@@ -93,18 +95,19 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
   required=14.0_wp*real(nBas,wp)**2+131072.0_wp
   if (.not.DoCholesky) required=required+real(nBas,wp)**4
   call mma_maxDBLE(avail)
-  if ((required>0.8_wp*real(avail,wp)).or.(required>real(huge(avail),wp)/2.0_wp)) then
+  if (ROMP2_Any((required>0.8_wp*real(avail,wp)).or.(required>real(huge(avail),wp)/2.0_wp))) then
     Message='Insufficient memory for ROMP2 reference Fock construction.'
     return
   end if
   np=nBas*(nBas+1)/2
   if (.not.DoCholesky) then
-    call f_Inquire('ORDINT',exists)
-    if (.not.exists) then
+    exists=.true.
+    if (ROMP2_IsRoot()) call f_Inquire('ORDINT',exists)
+    if (ROMP2_Any(.not.exists)) then
       Message='Conventional ROMP2 requires stored ORDINT; use SEWARD NoCholesky.'
       return
     end if
-    if (AuxTwo%Opn) return
+    if (ROMP2_Any(ROMP2_IsRoot().and.AuxTwo%Opn)) return
     call mma_allocate(ERI,nBas,nBas,nBas,nBas,label='ROMP2 AO ERI')
   end if
   call mma_allocate(Buf,np+4,label='ROMP2 integral buffer')
@@ -115,50 +118,80 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
   call mma_allocate(T,nBas,nBas,label='ROMP2 work')
   call mma_allocate(MA,nBas,nBas,label='ROMP2 MO Fock alpha')
   call mma_allocate(MB,nBas,nBas,label='ROMP2 MO Fock beta')
-  if (.not.AuxOne%Opn) then
-    call OpnOne(rc,0,'ONEINT',41)
-    oneopened=.true.
-    if (rc/=0) goto 900
+  ! ONEINT and ORDINT I/O are local in the Molcas reader layer.
+  ! Root is the sole file reader; distribute complete data explicitly.
+  H=0.0_wp
+  S=0.0_wp
+  rc=0
+  if (ROMP2_IsRoot()) then
+    if (.not.AuxOne%Opn) then
+      call OpnOne(rc,0,'ONEINT',41)
+      oneopened=.true.
+      if (rc/=0) goto 710
+    end if
+    opt=ibset(ibset(0,sNoOri),sNoNuc)
+    comp=1
+    sym=1
+    label='OneHam  '
+    call RdOne(rc,opt,label,comp,Buf,sym)
+    if (rc/=0) goto 710
+    call Unpack(Buf,H)
+    label='Mltpl  0'
+    call RdOne(rc,opt,label,comp,Buf,sym)
+    if (rc/=0) goto 710
+    call Unpack(Buf,S)
+    if (oneopened) then
+      call ClsOne(rc,0)
+      oneopened=.false.
+      if (rc/=0) goto 710
+    end if
+710 continue
   end if
-  opt=ibset(ibset(0,sNoOri),sNoNuc)
-  comp=1
-  sym=1
-  label='OneHam  '
-  call RdOne(rc,opt,label,comp,Buf,sym)
-  if (rc/=0) goto 900
-  call Unpack(Buf,H)
-  label='Mltpl  0'
-  call RdOne(rc,opt,label,comp,Buf,sym)
-  if (rc/=0) goto 900
-  call Unpack(Buf,S)
-  if (oneopened) then
-    call ClsOne(rc,0)
-    oneopened=.false.
-    if (rc/=0) goto 900
+  if (ROMP2_Any(rc/=0)) goto 900
+  if (ROMP2_IsParallel()) then
+    call GADGOp(H(1,1),size(H),'+')
+    call GADGOp(S(1,1),size(S),'+')
   end if
-  T=matmul(S,CAlpha)
-  MA=matmul(transpose(CAlpha),T)
+  call DGEMM_('N','N',nBas,nBas,nBas,1.0_wp,S,nBas,CAlpha,nBas,0.0_wp,T,nBas)
+  call DGEMM_('T','N',nBas,nBas,nBas,1.0_wp,CAlpha,nBas,T,nBas,0.0_wp,MA,nBas)
   do i=1,nBas
     MA(i,i)=MA(i,i)-1.0_wp
   end do
-  if ((.not.all(ieee_is_finite(MA))).or.(maxval(abs(MA))>1.0e-7_wp)) then
+  if (ROMP2_Any(logical( &
+      (.not.all(ieee_is_finite(MA))).or.(maxval(abs(MA))>1.0e-7_wp), &
+      kind=kind(.true.)))) then
     Message='ROHF orbitals are not orthonormal in the ONEINT overlap metric.'
     goto 900
   end if
   if (.not.DoCholesky) then
-    lu=43
-    call OpnOrd(rc,0,'ORDINT',lu)
-    opened=.true.
-    if (rc/=0) goto 900
-    call GetOrd(rc,square,fs,fbasis,skip)
-    if (rc/=0) goto 900
-    if ((fs/=1).or.(fbasis(1)/=nBas).or.(skip(1)/=0)) goto 900
+    rc=0
+    if (ROMP2_IsRoot()) then
+      lu=43
+      call OpnOrd(rc,0,'ORDINT',lu)
+      opened=.true.
+      if (rc==0) then
+        call GetOrd(rc,square,fs,fbasis,skip)
+        if (rc==0) then
+          if ((fs/=1).or.(fbasis(1)/=nBas).or.(skip(1)/=0)) rc=1
+        end if
+      end if
+    end if
+    if (ROMP2_Any(rc/=0)) goto 900
     opt=1
     do i=1,nBas
       do j=1,i
-        call RdOrd_(rc,opt,1,1,1,1,Buf,np+1,nmat)
-        opt=2
-        if ((rc/=0).or.(nmat/=1)) goto 900
+        Buf=0.0_wp
+        rc=0
+        if (ROMP2_IsRoot()) then
+          call RdOrd_(rc,opt,1,1,1,1,Buf,np+1,nmat)
+          opt=2
+          if (rc==0) then
+            if (nmat/=1) rc=1
+            if (.not.all(ieee_is_finite(Buf(1:np)))) rc=1
+          end if
+        end if
+        if (ROMP2_Any(rc/=0)) goto 900
+        if (ROMP2_IsParallel()) call GADGOp(Buf(1),np,'+')
         q=0
         do k=1,nBas
           do l=1,k
@@ -171,20 +204,31 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
         end do
       end do
     end do
-    call ClsOrd(rc)
-    opened=.false.
-    if (rc/=0) goto 900
+    rc=0
+    if (opened) then
+      call ClsOrd(rc)
+      opened=.false.
+    end if
+    if (ROMP2_Any(rc/=0)) goto 900
   end if
-  DA=matmul(CAlpha(:,1:nOccA),transpose(CAlpha(:,1:nOccA)))
-  DB=matmul(CBeta(:,1:nOccB),transpose(CBeta(:,1:nOccB)))
+  call DGEMM_('N','T',nBas,nBas,nOccA,1.0_wp,CAlpha,nBas,CAlpha,nBas,0.0_wp,DA,nBas)
+  call DGEMM_('N','T',nBas,nBas,nOccB,1.0_wp,CBeta,nBas,CBeta,nBas,0.0_wp,DB,nBas)
   FA=H
   FB=H
   if (DoCholesky) then
     call ROMP2_Cho_Fock(DA,DB,FA,FB,rc,Message)
-    if (rc/=0) goto 900
+    if (ROMP2_Any(rc/=0)) goto 900
   else
+    ! Include H once, then distribute matrix-element contractions.
+    if (.not.ROMP2_IsRoot()) then
+      FA=0.0_wp
+      FB=0.0_wp
+    end if
     do j=1,nBas
       do i=1,nBas
+        if (ROMP2_IsParallel()) then
+          if (mod((j-1)*nBas+i-1,nProcs)/=MyRank) cycle
+        end if
         do l=1,nBas
           do k=1,nBas
             FA(i,j)=FA(i,j)+(DA(k,l)+DB(k,l))*ERI(i,j,k,l)-DA(k,l)*ERI(i,k,j,l)
@@ -193,17 +237,27 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
         end do
       end do
     end do
+    if (ROMP2_IsParallel()) then
+      call GADGOp(FA(1,1),size(FA),'+')
+      call GADGOp(FB(1,1),size(FB),'+')
+    end if
   end if
-  if ((.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB)))) goto 900
+  if (ROMP2_Any(logical( &
+      (.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB))), &
+      kind=kind(.true.)))) goto 900
   call Get_dScalar('PotNuc',enuc)
   echeck=enuc+0.5_wp*(sum(DA*(H+FA))+sum(DB*(H+FB)))
-  if ((.not.ieee_is_finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp)) then
+  if (ROMP2_Any(logical( &
+      (.not.ieee_is_finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp), &
+      kind=kind(.true.)))) then
     write(u6,*) 'ROHF stored/reconstructed energies: ',ESCF,echeck
     Message='ROHF determinant energy does not match RASSCF; check reference and Hamiltonian.'
     goto 900
   end if
-  MA=matmul(transpose(CAlpha),matmul(FA,CAlpha))
-  MB=matmul(transpose(CAlpha),matmul(FB,CAlpha))
+  call DGEMM_('N','N',nBas,nBas,nBas,1.0_wp,FA,nBas,CAlpha,nBas,0.0_wp,T,nBas)
+  call DGEMM_('T','N',nBas,nBas,nBas,1.0_wp,CAlpha,nBas,T,nBas,0.0_wp,MA,nBas)
+  call DGEMM_('N','N',nBas,nBas,nBas,1.0_wp,FB,nBas,CAlpha,nBas,0.0_wp,T,nBas)
+  call DGEMM_('T','N',nBas,nBas,nBas,1.0_wp,CAlpha,nBas,T,nBas,0.0_wp,MB,nBas)
   grad=0.0_wp
   do i=1,nBas
     oa=0.0_wp
@@ -218,7 +272,7 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
       grad=max(grad,abs((oa-pa)*MA(i,j)+(ob-pb)*MB(i,j)))
     end do
   end do
-  if (grad>1.0e-5_wp) then
+  if (ROMP2_Any(grad>1.0e-5_wp)) then
     write(u6,*) 'ROHF stationarity residual: ',grad
     Message='ROHF orbital stationarity check failed; tighten RASSCF convergence.'
     goto 900

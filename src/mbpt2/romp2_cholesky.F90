@@ -12,10 +12,11 @@
 !***********************************************************************
 
 module ROMP2_Cholesky
-! Serial C1 Cholesky lifecycle shared by the reference-Fock and doubles
+! Serial/MPI C1 Cholesky lifecycle shared by the reference-Fock and doubles
 ! stages. AO vectors are streamed twice; no four-index AO tensor is built.
 use Definitions, only: wp,iwp,u6
-use Para_Info, only: nProcs
+use Para_Info, only: nProcs,MyRank
+use ROMP2_Parallel
 use Data_Structures, only: SBA_Type,Allocate_DT,Deallocate_DT
 use Cholesky, only: NumCho,nDimRS,ChoNSym=>nSym,ChoNBas=>nBas
 use UMP2_Global, only: nBas,nOA,nOB,nVA,nVB,EOccA,EOccB,EVirA,EVirB,DenTol,EAA,EBB,EAB
@@ -27,7 +28,7 @@ implicit none
 private
 public :: ROMP2_Cho_Open,ROMP2_Cho_Close,ROMP2_Cho_Fock,ROMP2_Cho_Energy
 logical,save :: ChoReady=.false.,HaveAO=.false.
-integer(kind=iwp),save :: nVec=0,nRead=0,iRedC=-1
+integer(kind=iwp),save :: nVec=0,nGlobal=0,Offset=0,nRead=0,iRedC=-1
 integer(kind=iwp),save :: Skip(8)=0
 real(kind=wp),allocatable,save :: RedVec(:)
 type(SBA_Type),target,save :: AO
@@ -36,48 +37,75 @@ contains
 subroutine ROMP2_Cho_Open(ierr,Message)
   integer(kind=iwp),intent(out) :: ierr
   character(len=*),intent(out) :: Message
-  integer(kind=iwp) :: Dims(1),Available
+  integer(kind=iwp) :: Dims(1),Available,nWorkers
+  integer(kind=iwp),allocatable :: Counts(:)
   real(kind=wp) :: Required
+#include "warnings.h"
   ierr=1
-  Message='ROMP2 Cholesky initialization requires a serial C1 reference.'
-  if (nProcs/=1) return
-  if (ChoReady.or.HaveAO) then
+  Message='ROMP2 Cholesky initialization failed.'
+  if (ROMP2_Any(ChoReady.or.HaveAO)) then
     Message='ROMP2 Cholesky interface is already initialized.'
     return
   end if
   call Cho_X_Init(ierr,0.0_wp)
-  if (ierr/=0) then
-    Message='ROMP2 Cho_X_Init failed.'
+  if (ROMP2_Any(ierr/=0)) then
+    ! A partial initialization must not finalize on only a subset of ranks.
+    Message='ROMP2 Cho_X_Init failed on at least one rank.'
+    call Quit(_RC_CHO_INI_)
     return
   end if
   ChoReady=.true.
   ierr=1
-  if ((ChoNSym/=1).or.(ChoNBas(1)/=nBas)) then
+  if (ROMP2_Any((ChoNSym/=1).or.(ChoNBas(1)/=nBas))) then
     Message='Cholesky and ROHF reference dimensions disagree.'
     return
   end if
-  nVec=NumCho(1)
-  if (nVec<=0) then
-    Message='ROMP2 Cholesky vector count is zero or invalid.'
+  nVec=NumCho(1) ! LOCAL count, possibly zero.
+  if (ROMP2_Any(nVec<0)) then
+    Message='Invalid local Cholesky count.'
     return
   end if
-  if (.not.allocated(nDimRS)) then
-    Message='ROMP2 Cholesky reduced-set dimensions are missing.'
+  nWorkers=1
+  if (ROMP2_IsParallel()) nWorkers=nProcs
+  call mma_allocate(Counts,nWorkers,label='ROMP2 vector counts')
+  Counts=0
+  if (ROMP2_IsParallel()) then
+    Counts(MyRank+1)=nVec
+    call gaIgOP(Counts(1),nWorkers,'+')
+  else
+    Counts(1)=nVec
+  end if
+  if (sum(real(Counts,wp))>real(huge(nGlobal)-1,wp)) then
+    call mma_deallocate(Counts)
+    Message='Global Cholesky count exceeds integer range.'
     return
   end if
-  if ((size(nDimRS,1)<1).or.(size(nDimRS,2)<1)) then
-    Message='Invalid ROMP2 Cholesky reduced-set dimensions.'
+  nGlobal=sum(Counts)
+  Offset=0
+  if (ROMP2_IsParallel().and.(MyRank>0)) Offset=sum(Counts(1:MyRank))
+  call mma_deallocate(Counts)
+  if (nGlobal<=0) then
+    Message='The global Cholesky vector count is zero.'
+    return
+  end if
+  if (ROMP2_Any(.not.allocated(nDimRS))) then
+    Message='Missing Cholesky reduced-set dimensions.'
+    return
+  end if
+  if (ROMP2_Any((size(nDimRS,1)<1).or.(size(nDimRS,2)<1))) then
+    Message='Invalid Cholesky reduced-set dimensions.'
     return
   end if
   nRead=maxval(nDimRS(1,:))
-  if (nRead<=0) then
-    Message='Empty ROMP2 Cholesky reduced sets.'
+  if (ROMP2_Any((nVec>0).and.(nRead<=0))) then
+    Message='Empty reduced sets on a vector-owning rank.'
     return
   end if
+  nRead=max(1,nRead)
   Required=real(nRead,wp)+real(nBas,wp)**2
   call mma_maxDBLE(Available)
-  if ((Required>0.75_wp*real(Available,wp)).or. &
-      (Required>real(huge(Available)-1,wp)/real(storage_size(0.0_wp),wp))) then
+  if (ROMP2_Any((Required>0.75_wp*real(Available,wp)).or. &
+      (Required>real(huge(Available)-1,wp)/real(storage_size(0.0_wp),wp)))) then
     Message='Insufficient memory or integer range for ROMP2 AO Cholesky reader.'
     return
   end if
@@ -89,7 +117,7 @@ subroutine ROMP2_Cho_Open(ierr,Message)
   Skip=0
   Skip(1)=1
   iRedC=-1
-  write(u6,'(A,I10)') ' ROMP2 Cholesky vectors: ',nVec
+  if (ROMP2_IsRoot()) write(u6,'(A,I10)') ' ROMP2 Cholesky vectors (global): ',nGlobal
   ierr=0
   Message=''
 end subroutine ROMP2_Cho_Open
@@ -132,14 +160,20 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
   integer(kind=iwp) :: iVec,Available
   ierr=1
   Message='ROMP2 Cholesky interface is not initialized for Fock construction.'
-  if ((.not.ChoReady).or.(.not.HaveAO)) return
+  if (ROMP2_Any((.not.ChoReady).or.(.not.HaveAO))) return
   call mma_maxDBLE(Available)
-  if (2.0_wp*real(nBas,wp)**2>0.75_wp*real(Available,wp)) then
+  if (ROMP2_Any(2.0_wp*real(nBas,wp)**2>0.75_wp*real(Available,wp))) then
     Message='Insufficient memory for ROMP2 Cholesky Fock work arrays.'
     return
   end if
   call mma_allocate(Work,nBas,nBas,label='ROMP2 Cholesky density work')
   call mma_allocate(Exchange,nBas,nBas,label='ROMP2 Cholesky exchange')
+  ! H is present only on root, so the reduction includes it exactly once.
+  if (.not.ROMP2_IsRoot()) then
+    FA=0.0_wp
+    FB=0.0_wp
+  end if
+  ierr=0
   iRedC=-1
   do iVec=1,nVec
     call ReadVector(iVec,ierr,Message)
@@ -156,8 +190,16 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
   end do
   call mma_deallocate(Work)
   call mma_deallocate(Exchange)
+  ! Local vector loops have unequal lengths: synchronize only after the loop.
+  call ROMP2_SyncError(ierr,Message)
   if (ierr/=0) return
-  if ((.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB)))) then
+  if (ROMP2_IsParallel()) then
+    call GADGOp(FA(1,1),size(FA),'+')
+    call GADGOp(FB(1,1),size(FB),'+')
+  end if
+  if (ROMP2_Any(logical( &
+      (.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB))), &
+      kind=kind(.true.)))) then
     ierr=1
     Message='Nonfinite ROMP2 Cholesky Fock matrix.'
     return
@@ -170,34 +212,53 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
   ! The shared UMP2 transformation excludes nFro occupied orbitals.
   integer(kind=iwp),intent(out) :: ierr
   character(len=*),intent(out) :: Message
-  integer(kind=iwp) :: Available,iVec
+  integer(kind=iwp) :: Available,iVec,GlobalVec
   real(kind=wp) :: NAElements,NBElements,Required
   real(kind=wp),allocatable :: La(:,:,:),Lb(:,:,:)
   ierr=1
   Message='ROMP2 Cholesky interface is not initialized for doubles.'
-  if ((.not.ChoReady).or.(.not.HaveAO)) return
-  NAElements=real(nVA,wp)*real(nOA,wp)*real(nVec,wp)
-  NBElements=real(nVB,wp)*real(nOB,wp)*real(nVec,wp)
-  if (max(NAElements,NBElements)>real(huge(Available)-1,wp)/real(storage_size(0.0_wp),wp)) then
+  if (ROMP2_Any((.not.ChoReady).or.(.not.HaveAO))) return
+  NAElements=real(nVA,wp)*real(nOA,wp)*real(nGlobal,wp)
+  NBElements=real(nVB,wp)*real(nOB,wp)*real(nGlobal,wp)
+  if (ROMP2_Any(max(NAElements,NBElements)> &
+      real(huge(Available)-1,wp)/real(storage_size(0.0_wp),wp))) then
     Message='ROMP2 transformed vectors exceed supported integer indexing range.'
     return
   end if
   Required=NAElements+NBElements+3.0_wp*real(nBas,wp)*real(max(1,nOA,nOB),wp)
   call mma_maxDBLE(Available)
-  if (Required>0.75_wp*real(Available,wp)) then
+  if (ROMP2_Any(Required>0.75_wp*real(Available,wp))) then
     Message='Insufficient memory for in-core ROMP2 occupied-virtual Cholesky vectors.'
     return
   end if
-  call mma_allocate(La,nVA,nOA,nVec,label='ROMP2 alpha OV Cholesky')
-  call mma_allocate(Lb,nVB,nOB,nVec,label='ROMP2 beta OV Cholesky')
+  call mma_allocate(La,nVA,nOA,nGlobal,label='ROMP2 alpha OV Cholesky')
+  call mma_allocate(Lb,nVB,nOB,nGlobal,label='ROMP2 beta OV Cholesky')
+  La=0.0_wp
+  Lb=0.0_wp
+  ierr=0
   iRedC=-1
   do iVec=1,nVec
     call ReadVector(iVec,ierr,Message)
-    if (ierr/=0) goto 900
-    call UMP2_Transform_AO_Batch(AO%SB(1)%A3,La(:,:,iVec:iVec),Lb(:,:,iVec:iVec),ierr,Message)
-    if (ierr/=0) goto 900
+    if (ierr/=0) exit
+    GlobalVec=Offset+iVec
+    call UMP2_Transform_AO_Batch(AO%SB(1)%A3, &
+                               La(:,:,GlobalVec:GlobalVec),Lb(:,:,GlobalVec:GlobalVec),ierr,Message)
+    if (ierr/=0) exit
   end do
-  call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB,nOA,nVA,nOB,nVB,nVec,DenTol,EAA,EBB,EAB,ierr)
+  call ROMP2_SyncError(ierr,Message)
+  if (ierr/=0) goto 900
+  if (ROMP2_IsParallel()) then
+    if (size(La)>0) call GADGOp(La(1,1,1),size(La),'+')
+    if (size(Lb)>0) call GADGOp(Lb(1,1,1),size(Lb),'+')
+  end if
+  if (ROMP2_Any(logical( &
+      (.not.all(ieee_is_finite(La))).or.(.not.all(ieee_is_finite(Lb))), &
+      kind=kind(.true.)))) then
+    ierr=1
+    Message='Nonfinite assembled Cholesky vectors.'
+    goto 900
+  end if
+  call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB,nOA,nVA,nOB,nVB,nGlobal,DenTol,EAA,EBB,EAB,ierr)
   if (ierr/=0) then
     Message='ROMP2 Cholesky doubles failed; check orbital-energy denominators.'
   else if (.not.all(ieee_is_finite([EAA,EBB,EAB]))) then
@@ -224,6 +285,8 @@ subroutine ROMP2_Cho_Close(ierr)
     ChoReady=.false.
   end if
   nVec=0
+  nGlobal=0
+  Offset=0
   nRead=0
   iRedC=-1
 end subroutine ROMP2_Cho_Close
