@@ -101,13 +101,12 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
   end if
   np=nBas*(nBas+1)/2
   if (.not.DoCholesky) then
-    exists=.true.
-    if (ROMP2_IsRoot()) call f_Inquire('ORDINT',exists)
+    call f_Inquire('ORDINT',exists)
     if (ROMP2_Any(.not.exists)) then
       Message='Conventional ROMP2 requires stored ORDINT; use SEWARD NoCholesky.'
       return
     end if
-    if (ROMP2_Any(ROMP2_IsRoot().and.AuxTwo%Opn)) return
+    if (ROMP2_Any(AuxTwo%Opn)) return
     call mma_allocate(ERI,nBas,nBas,nBas,nBas,label='ROMP2 AO ERI')
   end if
   call mma_allocate(Buf,np+4,label='ROMP2 integral buffer')
@@ -164,16 +163,17 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
     goto 900
   end if
   if (.not.DoCholesky) then
+    ! In real parallel execution ORDINT is distributed across ranks.
+    ! Every rank reads its local contribution and the row is reconstructed
+    ! by a global sum before it is unpacked into the replicated AO tensor.
     rc=0
-    if (ROMP2_IsRoot()) then
-      lu=43
-      call OpnOrd(rc,0,'ORDINT',lu)
-      opened=.true.
+    lu=43
+    call OpnOrd(rc,0,'ORDINT',lu)
+    opened=.true.
+    if (rc==0) then
+      call GetOrd(rc,square,fs,fbasis,skip)
       if (rc==0) then
-        call GetOrd(rc,square,fs,fbasis,skip)
-        if (rc==0) then
-          if ((fs/=1).or.(fbasis(1)/=nBas).or.(skip(1)/=0)) rc=1
-        end if
+        if ((fs/=1).or.(fbasis(1)/=nBas).or.(skip(1)/=0)) rc=1
       end if
     end if
     if (ROMP2_Any(rc/=0)) goto 900
@@ -182,13 +182,11 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
       do j=1,i
         Buf=0.0_wp
         rc=0
-        if (ROMP2_IsRoot()) then
-          call RdOrd_(rc,opt,1,1,1,1,Buf,np+1,nmat)
-          opt=2
-          if (rc==0) then
-            if (nmat/=1) rc=1
-            if (.not.all(ieee_is_finite(Buf(1:np)))) rc=1
-          end if
+        call RdOrd_(rc,opt,1,1,1,1,Buf,np+1,nmat)
+        opt=2
+        if (rc==0) then
+          if (nmat/=1) rc=1
+          if (.not.all(ieee_is_finite(Buf(1:np)))) rc=1
         end if
         if (ROMP2_Any(rc/=0)) goto 900
         if (ROMP2_IsParallel()) call GADGOp(Buf(1),np,'+')

@@ -13,8 +13,9 @@
 
 ! Stored-ORDINT, C1, serial/MPI ROMP2 doubles.
 ! Adapted from the existing UMP2 MPI conventional development kernel.
-! Real MPI: rank zero reads AO rows, all ranks receive each row, and
-! cyclic row owners transform them. Half is then replicated by reduction.
+! Real MPI: every rank reads its local distributed ORDINT contribution;
+! a global sum reconstructs each AO row before cyclic row owners transform it.
+! Half is then replicated by reduction.
 ! The second transformation/contraction is distributed over right occupied
 ! orbitals. With Is_Real_Par() false each displacement runs entirely locally.
 ! Two successive AO-pair transformations use BLAS; no Cholesky factors
@@ -62,7 +63,8 @@ subroutine ROMP2_Conventional_Energy(ierr,Message)
   Reported = .false.
   LuOrd = 43
   Parallel = (nProcs > 1) .and. Is_Real_Par()
-  Reader = (.not. Parallel) .or. (MyRank == 0)
+  ! ORDINT is rank-distributed in real parallel runs; every rank reads it.
+  Reader = .true.
   Workers = 1
   WorkRank = 0
   if (Parallel) then
@@ -259,7 +261,7 @@ contains
       end if
       call SyncError()
       if (ierr /= 0) exit
-      ! Only the reader contributes; addition therefore broadcasts the row.
+      ! Sum the rank-local ORDINT contributions into the complete AO row.
       if (Parallel) call GADGOp(Buf,nPair,'+')
       if (mod(q-1,Workers) == WorkRank) then
         call UnpackPair(Buf(1:nPair),AO,nBas)
