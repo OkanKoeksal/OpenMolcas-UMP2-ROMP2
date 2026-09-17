@@ -51,10 +51,12 @@ use cOrbInf, only: nDel, nExt, nFro, nOcc, nOrb, nSym
 use stdalloc, only: mma_allocate, mma_deallocate
 use Constants, only: Zero, One
 use Definitions, only: wp, iwp, u6
+use Open_Shell_Symmetry, only: Open_Shell_Symmetry_Driver
 
 implicit none
 #include "warnings.h"
 integer(kind=iwp), intent(out) :: ireturn
+integer(kind=iwp) :: ReferenceNSym
 integer(kind=iwp) :: i, iOpt, iPrc, irc, iSym, iTol, iTst, iType, l_T1, lthCMO, lthEOr, nAsh(8), nDel_tra(8), nFro_tra(8), &
                      nIsh(8), nOccT
 real(kind=wp) :: Dum(2), E0, E2BJAI, ESCF, ESSMP2, Etot, REFC, Shanks1_E, t1dg, t1nrm, TCPE(4), TCPT, TIOE(4), TIOT
@@ -73,6 +75,15 @@ TCPT = seconds()
 ! Check so it is a RHF-SCF reference that is being used.
 ! TBP, November 2012: do not quit, just issue a warning!
 call Get_cArray('Relax Method',Method1,8)
+
+! Preserve the tested C1 drivers; use irrep-blocked processing otherwise.
+if ((Method1=='UHF-SCF ').or.(Method1=='CASSCF  ').or.(Method1=='RASSCF  ')) then
+  call Get_iScalar('nSym',ReferenceNSym)
+  if (ReferenceNSym/=1) then
+    call Open_Shell_Symmetry_Driver(Method1,ireturn)
+    return
+  end if
+end if
 
 ! Dispatch UHF before entering RHF-specific orbital processing.
 if (Method1 == 'UHF-SCF ') then

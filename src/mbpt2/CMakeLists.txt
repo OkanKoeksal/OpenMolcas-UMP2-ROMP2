@@ -31,6 +31,7 @@ set (sources
      lovmp2_drv.F90
      lovmp2_putinf.F90
      mbpt2_global.F90
+     open_shell_symmetry.F90
      mp2_driver.F90
      mp2ap.F90
      mp2dens_drv.F90
