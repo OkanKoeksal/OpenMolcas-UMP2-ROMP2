@@ -11,7 +11,13 @@
 ! Copyright (C) 2026, Okan Koeksal                                     *
 !***********************************************************************
 
-! Stored-ORDINT, C1, single-process canonical UMP2.
+! Stored-ORDINT, C1, serial/MPI canonical UMP2.
+! MPI implementation mirrors the validated C1 conventional ROMP2 data-distribution strategy.
+! Real MPI: every rank reads its local distributed ORDINT contribution;
+! a global sum reconstructs each AO row before cyclic row owners transform it.
+! Half is then replicated by reduction.
+! The second transformation/contraction is distributed over right occupied
+! orbitals. With Is_Real_Par() false each displacement runs entirely locally.
 ! Two successive AO-pair transformations use BLAS; no Cholesky factors
 ! or complete four-index MO tensor are constructed. Half(q,b,j) holds
 ! (mu nu | j b), q=mu*(mu-1)/2+nu, mu>=nu. Each pair is unpacked to a
@@ -31,7 +37,7 @@ contains
 
 subroutine UMP2_Conventional_Energy(ierr,Message)
 
-  use Para_Info, only: nProcs
+  use Para_Info, only: nProcs, MyRank, Is_Real_Par
   use TwoDat, only: AuxTwo
   use UMP2_Global, only: nSym, nBas, nOrb, nFro, nOccA, nOccB, &
                          nOA, nOB, nVA, nVB, CAlpha, CBeta, &
@@ -42,9 +48,10 @@ subroutine UMP2_Conventional_Energy(ierr,Message)
   integer(kind=iwp), intent(out) :: ierr
   character(len=*), intent(out) :: Message
   integer(kind=iwp) :: rc, CloseRC, FileNSym, FileBas(8), FileSkip(8)
-  integer(kind=iwp) :: nPair, LuOrd
+  integer(kind=iwp) :: nPair, LuOrd, Workers, WorkRank
   logical(kind=iwp) :: Exists, Square, IsCho, IsDF
-  logical :: Opened
+  logical :: Opened, Parallel, Reader, Reported
+  real(kind=wp) :: Components(3)
   real(kind=wp), allocatable :: Half(:,:,:)
 
   ierr = 0
@@ -53,67 +60,43 @@ subroutine UMP2_Conventional_Energy(ierr,Message)
   EBB = 0.0_wp
   EAB = 0.0_wp
   Opened = .false.
+  Reported = .false.
   LuOrd = 43
+  Parallel = (nProcs > 1) .and. Is_Real_Par()
+  ! ORDINT is rank-distributed in real parallel runs; every rank reads it.
+  Reader = .true.
+  Workers = 1
+  WorkRank = 0
+  if (Parallel) then
+    Workers = nProcs
+    WorkRank = MyRank
+  end if
 
-  if (nProcs /= 1) then
-    ierr = _RC_NOT_AVAILABLE_
-    Message = 'Conventional UMP2 currently requires one process; run pymolcas -np 1.'
-    return
-  end if
-  if ((nSym /= 1) .or. (nBas < 1) .or. (nOrb < 1) .or. (nOrb > nBas)) then
-    ierr = _RC_INPUT_ERROR_
-    Message = 'Conventional UMP2 requires a valid C1 reference.'
-    return
-  end if
-  if ((.not. ieee_is_finite(DenTol)) .or. (DenTol <= 0.0_wp)) then
-    ierr = _RC_INPUT_ERROR_
-    Message = 'Invalid UMP2 denominator tolerance.'
-    return
-  end if
-  call DecideOnCholesky(IsCho)
-  call DecideOnDF(IsDF)
-  if (IsCho .or. IsDF) then
-    ierr = _RC_INPUT_ERROR_
-    Message = 'The conventional UMP2 reader cannot be used for Cholesky or RI integrals.'
-    return
-  end if
-  call f_Inquire('ORDINT',Exists)
-  if (.not. Exists) then
-    ierr = _RC_NOT_AVAILABLE_
-    Message = 'Conventional UMP2 requires stored ORDINT integrals from SEWARD; direct SCF alone is insufficient.'
-    return
-  end if
-  if (AuxTwo%Opn) then
-    ierr = _RC_GENERAL_ERROR_
-    Message = 'Conventional UMP2 found an already-open ordered-integral interface.'
-    return
-  end if
-  ! Bound the product before integer multiplication, including lBuf=nPair+1.
-  if (real(nBas,wp)*(real(nBas,wp)+1.0_wp) >= real(huge(nPair),wp)) then
-    ierr = _RC_MEMORY_ERROR_
-    Message = 'Conventional UMP2 AO-pair dimensions exceed the integer range.'
-    return
-  end if
+  call CheckReference()
+  call SyncError()
+  if (ierr /= 0) return
   nPair = nBas*(nBas+1)/2
 
-  call OpnOrd(rc,0,'ORDINT',LuOrd)
-  Opened = .true.
-  if (rc /= 0) then
-    ierr = _RC_IO_ERROR_READ_
-    Message = 'Unable to open conventional ORDINT integrals.'
-    goto 900
+  if (Reader) then
+    call OpnOrd(rc,0,'ORDINT',LuOrd)
+    Opened = .true.
+    if (rc /= 0) then
+      ierr = _RC_IO_ERROR_READ_
+      Message = 'Unable to open conventional ORDINT integrals.'
+    else
+      call GetOrd(rc,Square,FileNSym,FileBas,FileSkip)
+      if (rc /= 0) then
+        ierr = _RC_IO_ERROR_READ_
+        Message = 'Unable to read the ORDINT header.'
+      else if ((FileNSym /= 1) .or. (FileBas(1) /= nBas) .or. (FileSkip(1) /= 0)) then
+        ierr = _RC_INPUT_ERROR_
+        Message = 'ORDINT symmetry, basis dimensions, or skipped blocks disagree with the UHF reference.'
+      end if
+    end if
   end if
-  call GetOrd(rc,Square,FileNSym,FileBas,FileSkip)
-  if (rc /= 0) then
-    ierr = _RC_IO_ERROR_READ_
-    Message = 'Unable to read the ORDINT header.'
-    goto 900
-  end if
-  if ((FileNSym /= 1) .or. (FileBas(1) /= nBas) .or. (FileSkip(1) /= 0)) then
-    ierr = _RC_INPUT_ERROR_
-    Message = 'ORDINT symmetry, basis dimensions, or skipped blocks disagree with the UHF reference.'
-    goto 900
-  end if
+  call SyncError()
+  if (ierr /= 0) goto 900
+
   ! In C1 both ordering modes expose nPair complete pair rows through
   ! RdOrd_. Square controls symmetry-block duplication, not AO unpacking.
 
@@ -122,6 +105,7 @@ subroutine UMP2_Conventional_Energy(ierr,Message)
     if (ierr /= 0) goto 900
     call Contract(CAlpha,nOccA,nOA,nVA,EOccA,EVirA,nOA,nVA,EOccA,EVirA,.true.,EAA)
     call mma_deallocate(Half,safe='*')
+    call SyncError()
     if (ierr /= 0) goto 900
   end if
 
@@ -132,10 +116,12 @@ subroutine UMP2_Conventional_Energy(ierr,Message)
     if (ierr /= 0) goto 900
     if ((nOB >= 2) .and. (nVB >= 2)) then
       call Contract(CBeta,nOccB,nOB,nVB,EOccB,EVirB,nOB,nVB,EOccB,EVirB,.true.,EBB)
+      call SyncError()
       if (ierr /= 0) goto 900
     end if
     if ((nOA > 0) .and. (nVA > 0)) then
       call Contract(CAlpha,nOccA,nOA,nVA,EOccA,EVirA,nOB,nVB,EOccB,EVirB,.false.,EAB)
+      call SyncError()
       if (ierr /= 0) goto 900
     end if
   end if
@@ -149,6 +135,18 @@ subroutine UMP2_Conventional_Energy(ierr,Message)
       Message = 'Unable to close ORDINT after conventional UMP2.'
     end if
   end if
+  call SyncError()
+  if ((ierr == 0) .and. Parallel) then
+    Components = [EAA,EBB,EAB]
+    call GADGOp(Components,3,'+')
+    EAA = Components(1)
+    EBB = Components(2)
+    EAB = Components(3)
+  end if
+  if ((ierr == 0) .and. (.not. all(ieee_is_finite([EAA,EBB,EAB])))) then
+    ierr = _RC_GENERAL_ERROR_
+    Message = 'Nonfinite globally reduced conventional UMP2 energy.'
+  end if
   if (ierr /= 0) then
     EAA = 0.0_wp
     EBB = 0.0_wp
@@ -156,6 +154,56 @@ subroutine UMP2_Conventional_Energy(ierr,Message)
   end if
 
 contains
+
+  subroutine SyncError()
+    ! Always called by every rank at matching points, even on failure.
+    if (Parallel) then
+      if ((ierr /= 0) .and. (.not. Reported)) &
+        write(u6,'(A,I6,2A)') ' Conventional UMP2 error on rank ',MyRank,': ',trim(Message)
+      call gaIgOP_SCAL(ierr,'max')
+      if (ierr /= 0) Reported = .true.
+    end if
+    if ((ierr /= 0) .and. (len_trim(Message) == 0)) &
+      Message = 'Conventional UMP2 failed on another MPI rank; inspect rank diagnostics.'
+  end subroutine SyncError
+
+  subroutine CheckReference()
+    if ((nSym /= 1) .or. (nBas < 1) .or. (nOrb < 1) .or. (nOrb > nBas)) then
+      ierr = _RC_INPUT_ERROR_
+      Message = 'Conventional UMP2 requires a valid C1 UHF reference.'
+      return
+    end if
+    if ((.not. ieee_is_finite(DenTol)) .or. (DenTol <= 0.0_wp)) then
+      ierr = _RC_INPUT_ERROR_
+      Message = 'Invalid UMP2 denominator tolerance.'
+      return
+    end if
+    call DecideOnCholesky(IsCho)
+    call DecideOnDF(IsDF)
+    if (IsCho .or. IsDF) then
+      ierr = _RC_INPUT_ERROR_
+      Message = 'The conventional UMP2 reader cannot be used for Cholesky or RI integrals.'
+      return
+    end if
+    Exists = .true.
+    if (Reader) call f_Inquire('ORDINT',Exists)
+    if (.not. Exists) then
+      ierr = _RC_NOT_AVAILABLE_
+      Message = 'Conventional UMP2 requires stored ORDINT integrals from SEWARD; direct SCF alone is insufficient.'
+      return
+    end if
+    if (Reader .and. AuxTwo%Opn) then
+      ierr = _RC_GENERAL_ERROR_
+      Message = 'Conventional UMP2 found an already-open ordered-integral interface.'
+      return
+    end if
+    ! Bound the product before integer multiplication, including lBuf=nPair+1.
+    if (real(nBas,wp)*(real(nBas,wp)+1.0_wp) >= real(huge(nPair),wp)) then
+      ierr = _RC_MEMORY_ERROR_
+      Message = 'Conventional UMP2 AO-pair dimensions exceed the integer range.'
+      return
+    end if
+  end subroutine CheckReference
 
   subroutine TransformRight(C,nOcc,nO,nV,MaxO,MaxV)
     integer(kind=iwp), intent(in) :: nOcc,nO,nV,MaxO,MaxV
@@ -175,51 +223,71 @@ contains
     if (Required >= real(huge(Available),wp)/2.0_wp) then
       ierr = _RC_MEMORY_ERROR_
       Message = 'Conventional UMP2 intermediate dimensions exceed the supported integer range.'
-      return
     end if
+    call SyncError()
+    if (ierr /= 0) return
     call mma_maxDBLE(Available)
+    if (Parallel) call gaIgOP_SCAL(Available,'min')
     if (Required+131072.0_wp > 0.8_wp*real(Available,wp)) then
       write(u6,'(A,F14.1)') ' Conventional UMP2 estimated array storage (MiB): ',Required*8.0_wp/1048576.0_wp
       ierr = _RC_MEMORY_ERROR_
       Message = 'Insufficient memory for conventional UMP2 half transformation; increase MOLCAS_MEM or use Cholesky.'
-      return
     end if
+
+    call SyncError()
+    if (ierr /= 0) return
 
     call mma_allocate(Half,nPair,nV,nO,label='UMP2 conventional half')
     call mma_allocate(Buf,nPair+1,label='UMP2 ORDINT row')
     call mma_allocate(AO,nBas,nBas,label='UMP2 AO pair matrix')
     call mma_allocate(Tmp,nBas,nO,label='UMP2 first quarter')
     call mma_allocate(OV,nV,nO,label='UMP2 first half row')
+    Half = 0.0_wp
     iOpt = 1
     do q=1,nPair
       ! RdOrd_ uses (lBuf-1)/nPair to select the number of complete rows.
       ! Read the stored path directly, avoiding RdOrd's saved route flag.
-      call RdOrd_(ReadRC,iOpt,1,1,1,1,Buf,nPair+1,nMat)
-      iOpt = 2
-      if ((ReadRC /= 0) .or. (nMat /= 1)) then
-        ierr = _RC_IO_ERROR_READ_
-        Message = 'Failed to read a complete conventional AO-pair row.'
-        exit
+      Buf = 0.0_wp
+      if (Reader) then
+        call RdOrd_(ReadRC,iOpt,1,1,1,1,Buf,nPair+1,nMat)
+        iOpt = 2
+        if ((ReadRC /= 0) .or. (nMat /= 1)) then
+          ierr = _RC_IO_ERROR_READ_
+          Message = 'Failed to read a complete conventional AO-pair row.'
+        else if (.not. all(ieee_is_finite(Buf(1:nPair)))) then
+          ierr = _RC_IO_ERROR_READ_
+          Message = 'Nonfinite value in stored AO integrals.'
+        end if
       end if
-      if (.not. all(ieee_is_finite(Buf(1:nPair)))) then
-        ierr = _RC_IO_ERROR_READ_
-        Message = 'Nonfinite value in stored AO integrals.'
-        exit
+      call SyncError()
+      if (ierr /= 0) exit
+      ! Sum the rank-local ORDINT contributions into the complete AO row.
+      if (Parallel) call GADGOp(Buf,nPair,'+')
+      if (mod(q-1,Workers) == WorkRank) then
+        call UnpackPair(Buf(1:nPair),AO,nBas)
+        call DGEMM_('N','N',nBas,nO,nBas,1.0_wp,AO,nBas,C(1,nFro+1),nBas,0.0_wp,Tmp,nBas)
+        call DGEMM_('T','N',nV,nO,nBas,1.0_wp,C(1,nOcc+1),nBas,Tmp,nBas,0.0_wp,OV,nV)
+        if (.not. all(ieee_is_finite(OV))) then
+          ierr = _RC_GENERAL_ERROR_
+          Message = 'Nonfinite conventional half-transformed integrals.'
+        end if
+        do j=1,nO
+          do b=1,nV
+            Half(q,b,j) = OV(b,j)
+          end do
+        end do
       end if
-      call UnpackPair(Buf(1:nPair),AO,nBas)
-      call DGEMM_('N','N',nBas,nO,nBas,1.0_wp,AO,nBas,C(1,nFro+1),nBas,0.0_wp,Tmp,nBas)
-      call DGEMM_('T','N',nV,nO,nBas,1.0_wp,C(1,nOcc+1),nBas,Tmp,nBas,0.0_wp,OV,nV)
-      if (.not. all(ieee_is_finite(OV))) then
-        ierr = _RC_GENERAL_ERROR_
-        Message = 'Nonfinite conventional half-transformed integrals.'
-        exit
-      end if
+      call SyncError()
+      if (ierr /= 0) exit
+    end do
+    if ((ierr == 0) .and. Parallel) then
+      ! Use contiguous pair columns, keeping each collective count bounded.
       do j=1,nO
         do b=1,nV
-          Half(q,b,j) = OV(b,j)
+          call GADGOp(Half(1,b,j),nPair,'+')
         end do
       end do
-    end do
+    end if
     call mma_deallocate(Buf)
     call mma_deallocate(AO)
     call mma_deallocate(Tmp)
@@ -243,6 +311,7 @@ contains
     ! Keeping all a,b for this j makes the same-spin exchange permutation
     ! G(b,i,a) available without storing a complete MO integral tensor.
     OccupiedRight: do j=1,nOR
+      if (mod(j-1,Workers) /= WorkRank) cycle
       do b=1,nVR
         call UnpackPair(Half(:,b,j),AO,nBas)
         call DGEMM_('N','N',nBas,nO,nBas,1.0_wp,AO,nBas,C(1,nFro+1),nBas,0.0_wp,Tmp,nBas)

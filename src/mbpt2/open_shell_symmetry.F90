@@ -518,73 +518,76 @@ subroutine ReadConventional(ierr)
     blocks(g)%metric=0.0_wp
   end do
   call mma_allocate(buffer,nb*nb+1,label='ORDINT symmetry row')
+
+  ! In a real MPI calculation ORDINT is distributed over the ranks.
+  ! Therefore every rank must open and read its local ORDINT contribution.
+  ! Each packed AO-pair row is reconstructed by a global sum before it is
+  ! copied into the replicated symmetry-block metric.
   rc=0
-  if (ROMP2_IsRoot()) then
-    call f_Inquire('ORDINT',exists)
-    if ((.not.exists).or.AuxTwo%Opn) then
-      rc=1
-      goto 710
-    end if
-    lu=43
-    call OpnOrd(rc,0,'ORDINT',lu)
-    opened=.true.
-    if (rc/=0) goto 710
-    call GetOrd(rc,square,fs,fb,skip)
-    if (rc/=0) goto 710
-    if ((fs/=ns).or.any(fb(1:ns)/=bs(1:ns)).or.any(skip(1:ns)/=0)) then
-      rc=1
-      goto 710
-    end if
-    do g=1,ns
-      do s=1,ns
-        t=Mul(g,s)
-        if ((s<t).or.(bs(s)*bs(t)==0)) cycle
-        np=bs(s)*bs(t)
-        if (s==t) np=bs(s)*(bs(s)+1)/2
-        p0=pairindex(off(s)+1,off(t)+1)-1
-        do u=1,ns
-          v=Mul(g,u)
-          if ((u<v).or.(bs(u)*bs(v)==0)) cycle
-          ! Packed ORDINT stores only the lower symmetry-pair triangle.
-          if ((.not.square).and.(s*(s-1)/2+t<u*(u-1)/2+v)) cycle
-          nq=bs(u)*bs(v)
-          if (u==v) nq=bs(u)*(bs(u)+1)/2
-          q0=pairindex(off(u)+1,off(v)+1)-1
-          opt=1
-          do p=1,np
-            call RdOrd_(rc,opt,s,t,u,v,buffer,nq+1,nmat)
-            if (rc/=0) goto 710
-            if (nmat/=1) then
-              rc=1
-              goto 710
-            end if
-            opt=2
-            if (.not.all(ieee_is_finite(buffer(1:nq)))) then
-              rc=1
-              goto 710
-            end if
-            blocks(g)%metric(p0+p,q0+1:q0+nq)=buffer(1:nq)
-            if (.not.square) blocks(g)%metric(q0+1:q0+nq,p0+p)=buffer(1:nq)
-          end do
+  call f_Inquire('ORDINT',exists)
+  if ((.not.exists).or.AuxTwo%Opn) rc=1
+  if (ROMP2_Any(rc/=0)) goto 710
+
+  lu=43
+  call OpnOrd(rc,0,'ORDINT',lu)
+  if (rc==0) opened=.true.
+  if (ROMP2_Any(rc/=0)) goto 710
+
+  call GetOrd(rc,square,fs,fb,skip)
+  if (rc==0) then
+    if ((fs/=ns).or.any(fb(1:ns)/=bs(1:ns)).or.any(skip(1:ns)/=0)) rc=1
+  end if
+  if (ROMP2_Any(rc/=0)) goto 710
+
+  do g=1,ns
+    do s=1,ns
+      t=Mul(g,s)
+      if ((s<t).or.(bs(s)*bs(t)==0)) cycle
+      np=bs(s)*bs(t)
+      if (s==t) np=bs(s)*(bs(s)+1)/2
+      p0=pairindex(off(s)+1,off(t)+1)-1
+      do u=1,ns
+        v=Mul(g,u)
+        if ((u<v).or.(bs(u)*bs(v)==0)) cycle
+        ! Packed ORDINT stores only the lower symmetry-pair triangle.
+        if ((.not.square).and.(s*(s-1)/2+t<u*(u-1)/2+v)) cycle
+        nq=bs(u)*bs(v)
+        if (u==v) nq=bs(u)*(bs(u)+1)/2
+        q0=pairindex(off(u)+1,off(v)+1)-1
+        opt=1
+        do p=1,np
+          buffer=0.0_wp
+          rc=0
+          call RdOrd_(rc,opt,s,t,u,v,buffer,nq+1,nmat)
+          opt=2
+          if (rc==0) then
+            if (nmat/=1) rc=1
+            if (.not.all(ieee_is_finite(buffer(1:nq)))) rc=1
+          end if
+          if (ROMP2_Any(rc/=0)) goto 710
+
+          if (ROMP2_IsParallel()) call GADGOp(buffer(1),nq,'+')
+
+          blocks(g)%metric(p0+p,q0+1:q0+nq)=buffer(1:nq)
+          if (.not.square) blocks(g)%metric(q0+1:q0+nq,p0+p)=buffer(1:nq)
         end do
       end do
     end do
+  end do
+
 710 continue
-    if (opened) then
-      call ClsOrd(rc2)
-      if (rc2/=0) rc=rc2
-    end if
+  rc2=0
+  if (opened) then
+    call ClsOrd(rc2)
+    opened=.false.
   end if
+  if (rc==0 .and. rc2/=0) rc=rc2
+
   call mma_deallocate(buffer)
   message='Symmetry ORDINT read failed or dimensions disagree with the reference.'
   call ROMP2_SyncError(rc,message)
   if (rc/=0) return
-  if (ROMP2_IsParallel()) then
-    do g=1,ns
-      if (blocks(g)%np==0) cycle
-      call GADGOp(blocks(g)%metric(1,1),size(blocks(g)%metric),'+')
-    end do
-  end if
+
   ierr=0
 end subroutine ReadConventional
 

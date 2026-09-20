@@ -105,14 +105,14 @@ if (IsDF) then
   return
 end if
 
-if ((.not. DoCholesky) .and. (nProcs /= 1)) then
-  call Fail(_RC_NOT_AVAILABLE_,'Conventional UMP2 currently requires pymolcas -np 1.')
-  return
-end if
-
 if (MyRank == 0) then
   if (.not. DoCholesky) then
-    write(u6,'(/,A)') ' Canonical UMP2: serial C1 conventional stored-AO energy'
+    if (Parallel) then
+      write(u6,'(/,A)') ' Canonical UMP2: MPI C1 conventional stored-AO energy'
+      write(u6,'(A,I8)') ' MPI processes:                            ',nProcs
+    else
+      write(u6,'(/,A)') ' Canonical UMP2: serial C1 conventional stored-AO energy'
+    end if
   else if (Parallel) then
     write(u6,'(/,A)') ' Canonical UMP2: MPI-v2 C1 Cholesky energy'
     write(u6,'(A,I8)') ' MPI processes:                            ',nProcs
