@@ -233,6 +233,7 @@ if ((Method(5:7) == 'SCF') .or. &
     (Method(1:6) == 'CASPT2') .or. &
     (Method(1:5) == 'MBPT2') .or. &
     (Method == 'UMP2    ') .or. &
+    (Method == 'ROMP2   ') .or. &
     (Method(1:5) == 'CCSDT') .or. &
     (Method(1:4) == 'CHCC') .or. &
     (Method(1:6) == 'MCPDFT') .or. &
@@ -623,6 +624,7 @@ do
   else if ((Method(1:6) == 'RASSCF') .or. &
            (Method(1:6) == 'GASSCF') .or. &
            (Method(1:6) == 'CASSCF') .or. &
+           (Method == 'ROMP2   ') .or. &
            (Method(1:6) == 'MCPDFT') .or. &
            (Method(1:6) == 'MSPDFT') .or. &
            (Method(1:6) == 'CASPT2') .or. &
@@ -650,14 +652,21 @@ do
     end if
   end if
 
-  ! UMP2 uses the same module and MBPT2INP as restricted MP2.
-  ! Verify that displaced SCF restored the unrestricted reference;
-  ! never force the marker or substitute an RHF energy silently.
-  if ((Method(1:5) == 'MBPT2') .or. (Method == 'UMP2    ')) then
+  ! UMP2 and ROMP2 use the MBPT2 module and MBPT2INP.  The open-shell
+  ! reference must be regenerated at every displacement before MBPT2 is
+  ! called: UHF-SCF for UMP2, determinant RASSCF/CASSCF for ROMP2.
+  if ((Method(1:5) == 'MBPT2') .or. (Method == 'UMP2    ') .or. (Method == 'ROMP2   ')) then
     if (Method == 'UMP2    ') then
       call Get_cArray('Relax Method',DisplacedMethod,8)
       if (DisplacedMethod /= 'UHF-SCF ') then
         write(LuWr,*) 'Numerical_Gradient: UMP2 requires UHF-SCF at every displacement.'
+        write(LuWr,*) 'Displacement and actual method: ',iDisp,DisplacedMethod
+        call Abend()
+      end if
+    else if (Method == 'ROMP2   ') then
+      call Get_cArray('Relax Method',DisplacedMethod,8)
+      if ((DisplacedMethod /= 'RASSCF  ') .and. (DisplacedMethod /= 'CASSCF  ')) then
+        write(LuWr,*) 'Numerical_Gradient: ROMP2 requires determinant RASSCF at every displacement.'
         write(LuWr,*) 'Displacement and actual method: ',iDisp,DisplacedMethod
         call Abend()
       end if
@@ -676,6 +685,13 @@ do
       call Get_cArray('Relax Method',DisplacedMethod,8)
       if (DisplacedMethod /= 'UMP2    ') then
         write(LuWr,*) 'Numerical_Gradient: displaced MBPT2 did not produce a UMP2 energy.'
+        write(LuWr,*) 'Displacement and actual method: ',iDisp,DisplacedMethod
+        call Abend()
+      end if
+    else if (Method == 'ROMP2   ') then
+      call Get_cArray('Relax Method',DisplacedMethod,8)
+      if (DisplacedMethod /= 'ROMP2   ') then
+        write(LuWr,*) 'Numerical_Gradient: displaced MBPT2 did not produce a ROMP2 energy.'
         write(LuWr,*) 'Displacement and actual method: ',iDisp,DisplacedMethod
         call Abend()
       end if

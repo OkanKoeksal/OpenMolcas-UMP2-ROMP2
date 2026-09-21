@@ -45,6 +45,7 @@ if ((Method(5:7) /= 'SCF') .and. &
     (Method(1:6) /= 'CASPT2') .and. &
     (Method(1:5) /= 'MBPT2') .and. &
     (Method /= 'UMP2    ') .and. &
+    (Method /= 'ROMP2   ') .and. &
     (Method(1:5) /= 'CCSDT') .and. &
     (Method(1:4) /= 'CHCC') .and. &
     (Method(1:6) /= 'MCPDFT') .and. &
@@ -121,6 +122,7 @@ if (((Method(5:7) == 'SCF') .and. (Method(1:4) /= 'DMRG')) .or. &
   end if
 else if ((Method(1:6) == 'RASSCF') .or. &
          (Method(1:6) == 'CASSCF') .or. &
+         (Method == 'ROMP2   ') .or. &
          (Method(1:6) == 'CASPT2') .or. &
          (Method(1:6) == 'MCPDFT') .or. &
          (Method(1:6) == 'MSPDFT') .or. &
@@ -155,12 +157,19 @@ else if (Method(1:8) == 'EXTERNAL') then
   end if
 end if
 
-! UMP2 is implemented inside MBPT2 and requires a fresh UHF reference.
-if ((Method(1:5) == 'MBPT2') .or. (Method == 'UMP2    ')) then
+! Open-shell MP2 final energies require a fresh reference at the final
+! geometry: UHF-SCF for UMP2 and determinant RASSCF/CASSCF for ROMP2.
+if ((Method(1:5) == 'MBPT2') .or. (Method == 'UMP2    ') .or. (Method == 'ROMP2   ')) then
   if (Method == 'UMP2    ') then
     call Get_cArray('Relax Method',FinalMethod,8)
     if (FinalMethod /= 'UHF-SCF ') then
       write(u6,*) 'Last_Energy: UMP2 requires a UHF-SCF reference; actual method: ',FinalMethod
+      call Abend()
+    end if
+  else if (Method == 'ROMP2   ') then
+    call Get_cArray('Relax Method',FinalMethod,8)
+    if ((FinalMethod /= 'RASSCF  ') .and. (FinalMethod /= 'CASSCF  ')) then
+      write(u6,*) 'Last_Energy: ROMP2 requires a determinant RASSCF reference; actual method: ',FinalMethod
       call Abend()
     end if
   end if
@@ -176,6 +185,12 @@ if ((Method(1:5) == 'MBPT2') .or. (Method == 'UMP2    ')) then
     call Get_cArray('Relax Method',FinalMethod,8)
     if (FinalMethod /= 'UMP2    ') then
       write(u6,*) 'Last_Energy: MBPT2 did not produce a UMP2 energy; actual method: ',FinalMethod
+      call Abend()
+    end if
+  else if (Method == 'ROMP2   ') then
+    call Get_cArray('Relax Method',FinalMethod,8)
+    if (FinalMethod /= 'ROMP2   ') then
+      write(u6,*) 'Last_Energy: MBPT2 did not produce a ROMP2 energy; actual method: ',FinalMethod
       call Abend()
     end if
   end if

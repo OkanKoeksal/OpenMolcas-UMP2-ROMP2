@@ -55,11 +55,6 @@ call Chk_Numerical(LuSpool,Numerical)
 ! case.
 
 call Get_cArray('Relax Method',Method,8)
-if (Method == 'ROMP2   ') then
-  call WarningMessage(2,'Initial ROMP2 is single-point only; gradients are not implemented.')
-  iRC = _RC_NOT_AVAILABLE_
-  return
-end if
 call Get_iScalar('Columbus',Columbus)
 !                                                                      *
 !***********************************************************************
@@ -127,11 +122,13 @@ if (Method == 'DMRGSCFS') then
   call Get_iScalar('SA ready',iGo)
 end if
 
-! UMP2 has energies only: always request finite differences, regardless
-! of mp2prpt. The MBPT2 analytic-density branches above remain unchanged.
+! UMP2 and ROMP2 have energies only: always request finite differences,
+! regardless of mp2prpt.  For ROMP2 the numerical-gradient driver reruns
+! the determinant RASSCF reference before every displaced MBPT2 evaluation.
+! The MBPT2 analytic-density branches above remain unchanged.
 if (Numerical .or. Do_Numerical_Cholesky .or. (Method == 'GASSCFSA') .or. ((Method == 'DMRGSCFS') .and. (iGo /= 2)) .or. &
     ((Method == 'CASPT2') .and. (iMp2Prpt /= 2)) .or. ((Method == 'MBPT2') .and. (iMp2Prpt /= 2)) .or. &
-    (Method == 'UMP2    ') .or. (Method == 'CCSDT') .or. (Method == 'EXTERNAL')) then
+    (Method == 'UMP2    ') .or. (Method == 'ROMP2   ') .or. (Method == 'CCSDT') .or. (Method == 'EXTERNAL')) then
   if (isNAC) then
     call Store_Not_Grad(0,NACstates(1),NACstates(2))
     call WarningMessage(2,'Numerical nonadiabatic coupling not implemented')
