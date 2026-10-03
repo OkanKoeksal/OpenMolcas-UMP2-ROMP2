@@ -74,7 +74,7 @@ if (Parallel) nWorkers = nProcs
 call UMP2_Clean()
 
 ! Energy evaluations are also allowed at displaced geometries.
-! NUMERICAL_GRADIENT disables real parallelism inside each displacement;
+! NUMERICAL_GRADIENT disables real parallelism inside each displacement:
 ! the existing Is_Real_Par guards select the local serial energy path.
 ! Analytic UMP2 densities and gradients are not computed here.
 
@@ -100,7 +100,7 @@ call DecideOnCholesky(DoCholesky)
 call DecideOnDF(IsDF)
 if (IsDF) then
   call Fail(_RC_NOT_AVAILABLE_, &
-            'UMP2 RI integrals are unsupported; use Cholesky or conventional stored AO integrals.')
+            'UMP2 RI integrals are unsupported: use Cholesky or conventional stored AO integrals.')
   return
 end if
 
@@ -314,7 +314,7 @@ else
     if (MyRank == 0) &
       write(u6,'(A,I8)') ' UMP2 energy-kernel return code: ',ierr
     call Fail(_RC_GENERAL_ERROR_, &
-              'UMP2 energy evaluation failed; check orbital-energy denominators.')
+              'UMP2 energy evaluation failed: check orbital-energy denominators.')
     return
   end if
 

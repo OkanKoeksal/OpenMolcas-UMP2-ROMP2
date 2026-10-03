@@ -39,7 +39,7 @@ subroutine ROMP2_SyncError(Code,Message)
   if (ROMP2_Any(Code/=0)) then
     if (Code/=0) write(u6,'(A,I6,2A)') ' ROMP2 rank ',MyRank,': ',trim(Message)
     Code=1
-    Message='ROMP2 failed on at least one rank; see preceding diagnostics.'
+    Message='ROMP2 failed on at least one rank: see preceding diagnostics.'
   end if
 end subroutine
 end module ROMP2_Parallel

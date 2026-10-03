@@ -13,12 +13,12 @@
 
 ! Stored-ORDINT, C1, serial/MPI canonical UMP2.
 ! MPI implementation mirrors the validated C1 conventional ROMP2 data-distribution strategy.
-! Real MPI: every rank reads its local distributed ORDINT contribution;
+! Real MPI: every rank reads its local distributed ORDINT contribution:
 ! a global sum reconstructs each AO row before cyclic row owners transform it.
 ! Half is then replicated by reduction.
 ! The second transformation/contraction is distributed over right occupied
 ! orbitals. With Is_Real_Par() false each displacement runs entirely locally.
-! Two successive AO-pair transformations use BLAS; no Cholesky factors
+! Two successive AO-pair transformations use BLAS: no Cholesky factors
 ! or complete four-index MO tensor are constructed. Half(q,b,j) holds
 ! (mu nu | j b), q=mu*(mu-1)/2+nu, mu>=nu. Each pair is unpacked to a
 ! symmetric AO matrix before transformation, so off-diagonal AO terms
@@ -63,7 +63,7 @@ subroutine UMP2_Conventional_Energy(ierr,Message)
   Reported = .false.
   LuOrd = 43
   Parallel = (nProcs > 1) .and. Is_Real_Par()
-  ! ORDINT is rank-distributed in real parallel runs; every rank reads it.
+  ! ORDINT is rank-distributed in real parallel runs: every rank reads it.
   Reader = .true.
   Workers = 1
   WorkRank = 0
@@ -164,7 +164,7 @@ contains
       if (ierr /= 0) Reported = .true.
     end if
     if ((ierr /= 0) .and. (len_trim(Message) == 0)) &
-      Message = 'Conventional UMP2 failed on another MPI rank; inspect rank diagnostics.'
+      Message = 'Conventional UMP2 failed on another MPI rank: inspect rank diagnostics.'
   end subroutine SyncError
 
   subroutine CheckReference()
@@ -189,7 +189,7 @@ contains
     if (Reader) call f_Inquire('ORDINT',Exists)
     if (.not. Exists) then
       ierr = _RC_NOT_AVAILABLE_
-      Message = 'Conventional UMP2 requires stored ORDINT integrals from SEWARD; direct SCF alone is insufficient.'
+      Message = 'Conventional UMP2 requires stored ORDINT integrals from SEWARD: direct SCF alone is insufficient.'
       return
     end if
     if (Reader .and. AuxTwo%Opn) then
@@ -231,7 +231,7 @@ contains
     if (Required+131072.0_wp > 0.8_wp*real(Available,wp)) then
       write(u6,'(A,F14.1)') ' Conventional UMP2 estimated array storage (MiB): ',Required*8.0_wp/1048576.0_wp
       ierr = _RC_MEMORY_ERROR_
-      Message = 'Insufficient memory for conventional UMP2 half transformation; increase MOLCAS_MEM or use Cholesky.'
+      Message = 'Insufficient memory for conventional UMP2 half transformation: increase MOLCAS_MEM or use Cholesky.'
     end if
 
     call SyncError()

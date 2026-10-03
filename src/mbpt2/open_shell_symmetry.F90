@@ -14,7 +14,7 @@
 module Open_Shell_Symmetry
 ! Abelian symmetry energy path. C1 continues to use the existing drivers.
 ! AO pair metrics and occupied-virtual pairs are grouped by product irrep.
-! Conventional metrics and transformed vectors are replicated; computation
+! Conventional metrics and transformed vectors are replicated: computation
 ! is distributed. This is an in-core implementation, with memory checks.
 use Definitions, only: wp,iwp,u6
 use Symmetry_Info, only: Mul
@@ -283,7 +283,7 @@ subroutine ReadReference(ierr)
   call ReadCounts('nFro',nf,ierr)
   if (ierr/=0) return
   ierr=1
-  message='Reference-frozen orbitals are unsupported; freeze only in MBPT2.'
+  message='Reference-frozen orbitals are unsupported: freeze only in MBPT2.'
   if (any(nf(1:ns)/=0)) return
   if (restricted) then
     call ReadCounts('nAsh',active,ierr)
@@ -365,7 +365,7 @@ end subroutine ReadReference
 
 subroutine SynchronizeReference()
   ! Explicitly replicate root reference data before any MPI-distributed
-  ! Fock, transformation, or doubles work.  The C1 drivers are untouched;
+  ! Fock, transformation, or doubles work.  The C1 drivers are untouched:
   ! this routine is used only by the non-C1 symmetry path.
   real(kind=wp) :: scalar(1)
   if (.not.ROMP2_IsParallel()) return
@@ -695,7 +695,7 @@ subroutine ReadCholesky(ierr,initialized)
     end do
     call Deallocate_DT(ao)
     message='Symmetry Cholesky vector read failed.'
-    ! Rank-local vector loops have unequal lengths; synchronize afterwards.
+    ! Rank-local vector loops have unequal lengths: synchronize afterwards.
     call ROMP2_SyncError(rc,message)
     if (rc/=0) exit
   end do
@@ -903,7 +903,7 @@ subroutine ReferenceFock(ierr)
     end do
   end do
   grad=maxval(abs(vec))
-  message='ROHF symmetry stationarity check failed; tighten RASSCF convergence.'
+  message='ROHF symmetry stationarity check failed: tighten RASSCF convergence.'
   if (ROMP2_Any(logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) goto 900
   ierr=0
 900 continue

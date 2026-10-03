@@ -49,7 +49,7 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
   call DGEMM_('N','N',n,n,n,1.0_wp,F,n,C,n,0.0_wp,T,n)
   call DGEMM_('T','N',n,n,n,1.0_wp,C,n,T,n,0.0_wp,M,n)
   ! Diagonalize each spin's occupied and virtual blocks separately.
-  ! No occupied/virtual mixing is permitted; the determinant is preserved.
+  ! No occupied/virtual mixing is permitted: the determinant is preserved.
   do k=1,2
     if (k==1) then
       first=1

@@ -36,7 +36,7 @@ subroutine ROMP2_Read(ierr,Message)
   call DecideOnCholesky(DoCholesky)
   call DecideOnDF(df)
   if (ROMP2_Any(df)) then
-    Message='ROMP2 RI/DF integrals are unsupported; use Cholesky or conventional integrals.'
+    Message='ROMP2 RI/DF integrals are unsupported: use Cholesky or conventional integrals.'
     return
   end if
   call Get_iScalar('nSym',nSym)
@@ -103,7 +103,7 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
   if (.not.DoCholesky) then
     call f_Inquire('ORDINT',exists)
     if (ROMP2_Any(.not.exists)) then
-      Message='Conventional ROMP2 requires stored ORDINT; use SEWARD NoCholesky.'
+      Message='Conventional ROMP2 requires stored ORDINT: use SEWARD NoCholesky.'
       return
     end if
     if (ROMP2_Any(AuxTwo%Opn)) return
@@ -118,7 +118,7 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
   call mma_allocate(MA,nBas,nBas,label='ROMP2 MO Fock alpha')
   call mma_allocate(MB,nBas,nBas,label='ROMP2 MO Fock beta')
   ! ONEINT and ORDINT I/O are local in the Molcas reader layer.
-  ! Root is the sole file reader; distribute complete data explicitly.
+  ! Root is the sole file reader: distribute complete data explicitly.
   H=0.0_wp
   S=0.0_wp
   rc=0
@@ -252,7 +252,7 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
       write(u6,'(6X,A,T48,F20.10,A)') 'Stored ROHF reference energy',ESCF,' a.u.'
       write(u6,'(6X,A,T48,F20.10,A)') 'Reconstructed ROHF energy',echeck,' a.u.'
     end if
-    Message='ROHF determinant energy does not match RASSCF; check reference and Hamiltonian.'
+    Message='ROHF determinant energy does not match RASSCF: check reference and Hamiltonian.'
     goto 900
   end if
   call DGEMM_('N','N',nBas,nBas,nBas,1.0_wp,FA,nBas,CAlpha,nBas,0.0_wp,T,nBas)
@@ -276,7 +276,7 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
   if (ROMP2_Any(grad>1.0e-5_wp)) then
     if (ROMP2_IsRoot()) &
       write(u6,'(6X,A,T48,ES14.6)') 'ROHF stationarity residual',grad
-    Message='ROHF orbital stationarity check failed; tighten RASSCF convergence.'
+    Message='ROHF orbital stationarity check failed: tighten RASSCF convergence.'
     goto 900
   end if
   ierr=0

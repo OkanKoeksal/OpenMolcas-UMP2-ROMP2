@@ -143,7 +143,7 @@ if (ierr /= 0) return
 
 if (.not. HaveFrozen) then
   ierr = 1
-  Message = 'Specify Frozen explicitly; use Frozen = 0 for all electrons.'
+  Message = 'Specify Frozen explicitly: use Frozen = 0 for all electrons.'
   return
 end if
 

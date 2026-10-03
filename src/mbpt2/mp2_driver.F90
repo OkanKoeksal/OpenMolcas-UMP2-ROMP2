@@ -76,7 +76,7 @@ TCPT = seconds()
 ! TBP, November 2012: do not quit, just issue a warning!
 call Get_cArray('Relax Method',Method1,8)
 
-! Preserve the tested C1 drivers; use irrep-blocked processing otherwise.
+! Preserve the tested C1 drivers: use irrep-blocked processing otherwise.
 if ((Method1=='UHF-SCF ').or.(Method1=='CASSCF  ').or.(Method1=='RASSCF  ')) then
   call Get_iScalar('nSym',ReferenceNSym)
   if (ReferenceNSym/=1) then

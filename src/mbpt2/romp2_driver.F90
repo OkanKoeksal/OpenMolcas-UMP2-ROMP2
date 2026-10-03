@@ -52,7 +52,7 @@ call mma_allocate(FB,nBas,nBas,label='ROMP2 Fock beta')
 call ROMP2_Fock(FA,FB,ierr,Message)
 call ROMP2_SyncError(ierr,Message)
 if (ierr/=0) goto 900
-! Root diagonalizes once; every rank must use the same orbital gauge.
+! Root diagonalizes once: every rank must use the same orbital gauge.
 ierr=0
 E1A=0.0_wp
 E1B=0.0_wp

@@ -13,7 +13,7 @@
 
 module ROMP2_Cholesky
 ! Serial/MPI C1 Cholesky lifecycle shared by the reference-Fock and doubles
-! stages. AO vectors are streamed twice; no four-index AO tensor is built.
+! stages. AO vectors are streamed twice: no four-index AO tensor is built.
 use Definitions, only: wp,iwp,u6
 use Para_Info, only: nProcs,MyRank
 use ROMP2_Parallel
@@ -151,7 +151,7 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
   ! FA/FB enter as H. Both densities include ALL occupied orbitals,
   ! including the core: freezing changes correlation, not the reference.
   ! J_P = L_P * sum_uv [(DA+DB)_uv L_P,uv]
-  ! K_sigma,P = L_P D_sigma L_P^T; L_P is checked symmetric.
+  ! K_sigma,P = L_P D_sigma L_P^T: L_P is checked symmetric.
   real(kind=wp),intent(in) :: DA(nBas,nBas),DB(nBas,nBas)
   real(kind=wp),intent(inout) :: FA(nBas,nBas),FB(nBas,nBas)
   integer(kind=iwp),intent(out) :: ierr
@@ -261,7 +261,7 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
   end if
   call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB,nOA,nVA,nOB,nVB,nGlobal,DenTol,EAA,EBB,EAB,ierr)
   if (ierr/=0) then
-    Message='ROMP2 Cholesky doubles failed; check orbital-energy denominators.'
+    Message='ROMP2 Cholesky doubles failed: check orbital-energy denominators.'
   else if (.not.all(ieee_is_finite([EAA,EBB,EAB]))) then
     ierr=1
     Message='Nonfinite ROMP2 Cholesky doubles energy.'
