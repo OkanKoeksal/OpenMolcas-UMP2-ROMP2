@@ -19,16 +19,15 @@ implicit none
 private
 
 ! ---------------------------------------------------------------------
-! Current implementation:
-!   Canonical UHF reference
-!   C1 symmetry
-!   Serial or MPI-v2 Cholesky energy evaluation
-!   Explicit frozen-core count
-!   No additional virtual deletion, densities, or gradients
+! Shared state for the open-shell MP2 energy implementations.
 !
-! MPI-v2 keeps no MPI state here. Para_Info remains the source of rank
-! information, and UMP2_Driver assembles complete replicated transformed
-! Cholesky-vector arrays before UMP2_Energy is called.
+! The C1 UMP2 driver supports conventional stored AO integrals and
+! Cholesky vectors in serial and MPI calculations.  Non-C1 references
+! are handled by the symmetry-blocked open-shell MP2 driver.
+!
+! Para_Info remains the source of MPI rank information.  The C1
+! Cholesky driver assembles complete replicated transformed vectors
+! before the occupied-pair contractions are distributed across ranks.
 ! ---------------------------------------------------------------------
 
 ! Dimensions of the reference.
@@ -37,9 +36,8 @@ private
 ! nOrb: number of retained MOs per spin, excluding basis directions
 !       removed during SCF.
 !
-! These are scalars because this implementation requires nSym == 1.
-! The reference reader must reject other symmetry settings before
-! assigning these dimensions.
+! These are scalars for the C1 drivers.  The symmetry-blocked path
+! maintains its irrep-resolved dimensions separately.
 
 integer(kind=iwp) :: nSym = 0
 integer(kind=iwp) :: nBas = 0

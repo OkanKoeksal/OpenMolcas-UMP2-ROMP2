@@ -15,7 +15,7 @@ subroutine ROMP2_Driver(ireturn)
 use Definitions, only: wp,iwp,u6
 use UMP2_Global
 use ROMP2_Parallel
-use Para_Info, only: nProcs,MyRank
+use Para_Info, only: MyRank
 use ROMP2_Reference, only: ROMP2_Read,ROMP2_Fock
 use ROMP2_Cholesky, only: ROMP2_Cho_Open,ROMP2_Cho_Close,ROMP2_Cho_Energy
 use ROMP2_Semicanonical, only: ROMP2_Semi
@@ -111,43 +111,42 @@ if (ierr/=0) then
   Message='ROMP2 Cholesky finalization failed.'
   goto 900
 end if
-if (ROMP2_IsRoot()) then
-if (ROMP2_IsParallel()) then
+if (ROMP2_IsRoot() .and. (iPL >= 2)) then
+  call PrintResultsHeader()
+
+  write(u6,'(6X,A,T48,A)') 'Method', '= Semicanonical ROHF-MBPT(2)'
   if (DoCholesky) then
-    write(u6,'(/,A)') ' Semicanonical ROHF-MBPT(2): MPI C1 Cholesky'
+    write(u6,'(6X,A,T48,A)') 'Integral treatment', '= Cholesky'
   else
-    write(u6,'(/,A)') ' Semicanonical ROHF-MBPT(2): MPI C1 conventional'
+    write(u6,'(6X,A,T48,A)') 'Integral treatment', '= Conventional stored AO integrals'
   end if
-  write(u6,'(A,I8)') ' MPI processes: ',nProcs
-else
-  if (DoCholesky) then
-    write(u6,'(/,A)') ' Semicanonical ROHF-MBPT(2): serial C1 Cholesky'
-  else
-    write(u6,'(/,A)') ' Semicanonical ROHF-MBPT(2): serial C1 conventional'
+  write(u6,'(6X,A,T48,A,I8)') 'Frozen occupied orbitals per spin','=',nFro
+
+  if (iPL >= 3) then
+    write(u6,'(6X,A,T48,A,2I8)') 'Occupied orbitals (alpha,beta)','=',nOccA,nOccB
+    write(u6,'(6X,A,T48,A,2I8)') 'Correlated occupied orbitals (alpha,beta)','=',nOA,nOB
+    write(u6,'(6X,A,T48,A,2I8)') 'Virtual orbitals (alpha,beta)','=',nVA,nVB
+
+    if (nFro > 0) then
+      write(u6,*)
+      write(u6,'(6X,A)') &
+        'Frozen-core convention: lowest occupied orbitals after spin semicanonicalization'
+      write(u6,'(6X,A)') &
+        'Index          alpha orbital energy / a.u.      beta orbital energy / a.u.'
+      do i=1,nFro
+        write(u6,'(6X,I5,2F31.12)') i,EOrbA(i),EOrbB(i)
+      end do
+    end if
   end if
+
+  write(u6,'(//6X,A,T48,A,F20.10,A)') 'ROHF reference energy','=',ESCF,' a.u.'
+  write(u6,'(6X,A,T48,A,F20.10,A)') 'Second-order correlation energy','=',ECorr,' a.u.'
+  write(u6,'(6X,A,T48,A,F20.10,A)') 'Total ROMP2 energy','=',ETotal,' a.u.'
+  write(u6,*)
+  call PrintResult(u6,'(6X,A,T50,F19.10)', &
+                   'Total MBPT2 energy',0,'',[ETotal],1)
+  write(u6,*)
 end if
-write(u6,'(A,I8)') ' Frozen occupied orbitals per spin: ',nFro
-write(u6,'(A,2I8)') ' Total occupied orbitals (A,B):     ',nOccA,nOccB
-write(u6,'(A,2I8)') ' Correlated occupied orbitals (A,B):',nOA,nOB
-write(u6,'(A,2I8)') ' Virtual orbitals (A,B):            ',nVA,nVB
-if (nFro>0) then
-  write(u6,'(A)') ' Core convention: lowest occupied orbitals AFTER full spin semicanonicalization.'
-  write(u6,'(A)') ' Excluded index       alpha energy / Eh        beta energy / Eh'
-  do i=1,nFro
-    write(u6,'(I15,2F25.12)') i,EOrbA(i),EOrbB(i)
-  end do
-else
-  write(u6,'(A)') ' All-electron correlation (no frozen orbitals).'
-end if
-write(u6,'(A,F24.12)') ' ROHF reference energy: ',ESCF
-write(u6,'(A,F24.12)') ' ROMP2 alpha singles:  ',E1A
-write(u6,'(A,F24.12)') ' ROMP2 beta singles:   ',E1B
-write(u6,'(A,F24.12)') ' ROMP2 AA doubles:     ',EAA
-write(u6,'(A,F24.12)') ' ROMP2 BB doubles:     ',EBB
-write(u6,'(A,F24.12)') ' ROMP2 AB doubles:     ',EAB
-write(u6,'(A,F24.12)') ' ROMP2 correlation:    ',ECorr
-write(u6,'(A,F24.12)') ' ROMP2 total energy:   ',ETotal
-end if ! root summary
 EnergyReady=.true.
 call Store_Energies(1,[ETotal],1)
 call Put_cArray('Relax Method','ROMP2   ',8)
@@ -160,9 +159,24 @@ call Add_Info('E_ROMP2_AB',[EAB],1,8)
 ireturn=_RC_ALL_IS_WELL_
 900 continue
 call ROMP2_Cho_Close(cleanupRC)
-if (cleanupRC/=0) write(u6,'(A,I8)') ' ROMP2 Cholesky cleanup return code: ',cleanupRC
+if ((cleanupRC/=0) .and. ROMP2_IsRoot()) &
+  write(u6,'(A,I8)') ' ROMP2 Cholesky cleanup return code: ',cleanupRC
 if ((ireturn/=_RC_ALL_IS_WELL_).and.ROMP2_IsRoot()) write(u6,'(A)') ' ROMP2 error: '//trim(Message)
 call mma_deallocate(FA,safe='*')
 call mma_deallocate(FB,safe='*')
 call UMP2_Clean()
+
+contains
+
+subroutine PrintResultsHeader()
+
+  write(u6,'(/,6X,A)') &
+    '********************************************************************************************************'
+  write(u6,'(6X,A)') &
+    '*                                               Results                                                *'
+  write(u6,'(6X,A/)') &
+    '********************************************************************************************************'
+
+end subroutine PrintResultsHeader
+
 end subroutine ROMP2_Driver

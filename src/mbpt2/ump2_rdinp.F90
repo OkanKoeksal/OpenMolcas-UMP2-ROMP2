@@ -128,7 +128,7 @@ ReadCommands: do
 
       ierr = 1
       Message = 'Unsupported UMP2 keyword: '//trim(Command)// &
-                '. This initial version accepts Frozen only.'
+                '. Supported keyword: Frozen.'
       exit ReadCommands
 
   end select

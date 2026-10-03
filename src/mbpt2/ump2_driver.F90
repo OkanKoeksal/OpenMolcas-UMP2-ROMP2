@@ -23,7 +23,7 @@ use Cholesky, only: NumCho, nDimRS, ChoNSym => nSym, ChoNBas => nBas
 use UMP2_Global, only: UMP2_Clean, nSym, nBas, nOccA, nOccB, nFro, &
                        nOA, nOB, nVA, nVB, EOccA, EOccB, EVirA, EVirB, &
                        DoCholesky, DenTol, ESCF, EAA, EBB, EAB, ECorr, &
-                       ETotal, EnergyReady
+                       ETotal, EnergyReady, iPL
 use UMP2_Cholesky_Transform, only: UMP2_Transform_AO_Batch
 use UMP2_Conventional, only: UMP2_Conventional_Energy
 
@@ -44,16 +44,15 @@ real(kind=wp), allocatable :: RedVec(:), La(:,:,:), Lb(:,:,:)
 type(SBA_Type), target :: AO
 character(len=256) :: Message
 
-! MPI-v2 implementation:
+! MPI implementation:
 !
 ! * Cholesky vectors remain distributed by the OpenMolcas Cholesky
-!   layer. NumCho(1) is therefore the LOCAL vector count on each rank.
+!   layer. NumCho(1) is therefore the local vector count on each rank.
 ! * Each rank transforms only its local AO Cholesky vectors.
-! * The transformed vectors are placed in a disjoint rank-owned slice of
+! * The transformed vectors are placed in disjoint rank-owned slices of
 !   globally sized La/Lb arrays.
-! * GADGOp then reconstructs the complete transformed vector set on
-!   every rank.
-! * UMP2_Energy distributes occupied-pair contractions over MPI ranks.
+! * GADGOp reconstructs the complete transformed vector set on every
+!   rank before UMP2_Energy distributes occupied-pair contractions.
 !
 ! The global Cholesky-vector order is rank-blocked rather than the
 ! original serial order. This is valid because all UMP2 contractions
@@ -103,27 +102,6 @@ if (IsDF) then
   call Fail(_RC_NOT_AVAILABLE_, &
             'UMP2 RI integrals are unsupported; use Cholesky or conventional stored AO integrals.')
   return
-end if
-
-if (MyRank == 0) then
-  if (.not. DoCholesky) then
-    if (Parallel) then
-      write(u6,'(/,A)') ' Canonical UMP2: MPI C1 conventional stored-AO energy'
-      write(u6,'(A,I8)') ' MPI processes:                            ',nProcs
-    else
-      write(u6,'(/,A)') ' Canonical UMP2: serial C1 conventional stored-AO energy'
-    end if
-  else if (Parallel) then
-    write(u6,'(/,A)') ' Canonical UMP2: MPI-v2 C1 Cholesky energy'
-    write(u6,'(A,I8)') ' MPI processes:                            ',nProcs
-  else
-    write(u6,'(/,A)') ' Canonical UMP2: serial C1 Cholesky energy'
-  end if
-  write(u6,'(A,I8)') ' Alpha occupied orbitals, including core: ',nOccA
-  write(u6,'(A,I8)') ' Beta occupied orbitals, including core:  ',nOccB
-  write(u6,'(A,I8)') ' Frozen occupied orbitals per spin:       ',nFro
-  write(u6,'(A,2I8)') ' Correlated occupied orbitals (A,B):      ',nOA,nOB
-  write(u6,'(A,2I8)') ' Virtual orbitals (A,B):                  ',nVA,nVB
 end if
 
 if (.not. DoCholesky) then
@@ -201,7 +179,7 @@ else
     return
   end if
 
-  ! La/Lb are GLOBAL replicated arrays in MPI-v2. Check their complete
+  ! La/Lb are globally replicated arrays. Check their complete
   ! per-rank memory requirement rather than the local Cholesky count.
   NAElements = real(nVA,wp)*real(nOA,wp)*real(nChoGlobal,wp)
   NBElements = real(nVB,wp)*real(nOB,wp)*real(nChoGlobal,wp)
@@ -227,7 +205,7 @@ else
         ' Available real words:                      ',Available
     end if
     call Fail(_RC_MEMORY_ERROR_, &
-              'Insufficient memory for replicated MPI-v2 UMP2 vectors.')
+              'Insufficient memory for replicated MPI UMP2 vectors.')
     return
   end if
 
@@ -249,11 +227,11 @@ else
   Skip(1) = 1
   iRedC = -1
 
-  if (MyRank == 0) then
-    write(u6,'(A,I8)') ' Cholesky vectors (global):              ',nChoGlobal
+  if ((MyRank == 0) .and. (iPL >= 3)) then
+    write(u6,'(6X,A,I10)') 'Cholesky vectors (global)              = ',nChoGlobal
     if (Parallel) then
-      write(u6,'(A,2I8)') &
-        ' Cholesky vectors/rank (min,max):          ',nChoMin,nChoMax
+      write(u6,'(6X,A,2I10)') &
+        'Cholesky vectors/rank (min,max)       = ',nChoMin,nChoMax
     end if
   end if
 
@@ -326,7 +304,8 @@ else
   end if
 
   ! Every rank now owns the complete transformed P dimension. Therefore the
-  ! MPI-v1 occupied-pair work sharing in UMP2_Energy is mathematically valid.
+  ! Occupied-pair work sharing in UMP2_Energy is independent of the
+  ! ordering of the complete Cholesky-vector set.
   call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB, &
                    nOA,nVA,nOB,nVB,nChoGlobal,DenTol, &
                    EAA,EBB,EAB,ierr)
@@ -358,15 +337,30 @@ end if
 
 EnergyReady = .true.
 
-if (MyRank == 0) then
-  write(u6,'(/,A,F24.12)') ' UHF reference energy:     ',ESCF
-  write(u6,'(A,F24.12)')   ' UMP2 AA correlation:     ',EAA
-  write(u6,'(A,F24.12)')   ' UMP2 BB correlation:     ',EBB
-  write(u6,'(A,F24.12)')   ' UMP2 AB correlation:     ',EAB
-  write(u6,'(A,F24.12)')   ' UMP2 correlation energy: ',ECorr
-  write(u6,'(A,F24.12)')   ' UMP2 total energy:       ',ETotal
+if ((MyRank == 0) .and. (iPL >= 2)) then
+  call PrintResultsHeader()
+
+  write(u6,'(6X,A,T48,A)') 'Method', '= Canonical UMP2'
+  if (DoCholesky) then
+    write(u6,'(6X,A,T48,A)') 'Integral treatment', '= Cholesky'
+  else
+    write(u6,'(6X,A,T48,A)') 'Integral treatment', '= Conventional stored AO integrals'
+  end if
+  write(u6,'(6X,A,T48,A,I8)') 'Frozen occupied orbitals per spin','=',nFro
+
+  if (iPL >= 3) then
+    write(u6,'(6X,A,T48,A,2I8)') 'Occupied orbitals (alpha,beta)','=',nOccA,nOccB
+    write(u6,'(6X,A,T48,A,2I8)') 'Correlated occupied orbitals (alpha,beta)','=',nOA,nOB
+    write(u6,'(6X,A,T48,A,2I8)') 'Virtual orbitals (alpha,beta)','=',nVA,nVB
+  end if
+
+  write(u6,'(//6X,A,T48,A,F20.10,A)') 'UHF reference energy','=',ESCF,' a.u.'
+  write(u6,'(6X,A,T48,A,F20.10,A)') 'Second-order correlation energy','=',ECorr,' a.u.'
+  write(u6,'(6X,A,T48,A,F20.10,A)') 'Total UMP2 energy','=',ETotal,' a.u.'
+  write(u6,*)
   call PrintResult(u6,'(6X,A,T50,F19.10)', &
                    'Total MBPT2 energy',0,'',[ETotal],1)
+  write(u6,*)
 end if
 
 call Store_Energies(1,[ETotal],1)
@@ -389,6 +383,18 @@ call UMP2_Clean()
 ireturn = _RC_ALL_IS_WELL_
 
 contains
+
+subroutine PrintResultsHeader()
+
+  write(u6,'(/,6X,A)') &
+    '********************************************************************************************************'
+  write(u6,'(6X,A)') &
+    '*                                               Results                                                *'
+  write(u6,'(6X,A/)') &
+    '********************************************************************************************************'
+
+end subroutine PrintResultsHeader
+
 
 subroutine ReleaseVectors(Code)
 

@@ -26,7 +26,7 @@ use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 implicit none
 private
 public :: Open_Shell_Symmetry_Driver
-integer(kind=iwp) :: ns,nb,bs(8),off(8),occ(8,2),frozen(8),workers,rankid
+integer(kind=iwp) :: ns,nb,bs(8),off(8),occ(8,2),frozen(8),workers,rankid,iPL
 integer(kind=iwp),allocatable :: symorb(:),pairindex(:,:),qindex(:,:,:)
 real(kind=wp),allocatable :: coeff(:,:,:),eps(:,:),hcore(:,:),overlap(:,:),density(:,:,:),fock(:,:,:)
 real(kind=wp) :: eref,singles(2)
@@ -49,8 +49,12 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   real(kind=wp) :: e(3),total,corr
   real(kind=wp),allocatable :: c(:,:),f(:,:),en(:)
   logical :: cho_open
+  integer(kind=iwp),external :: iPrintLevel
+  logical(kind=iwp),external :: Reduce_Prt
 #include "warnings.h"
   ireturn=_RC_INPUT_ERROR_
+  iPL=iPrintLevel(-1)
+  if (Reduce_Prt().and.(iPL<3)) iPL=0
   message='Symmetry reference initialization failed.'
   cho_open=.false.
   restricted=(method=='CASSCF  ').or.(method=='RASSCF  ')
@@ -145,37 +149,43 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
     call ROMP2_SyncError(ierr,message)
     if (ierr/=0) goto 900
   end if
-  if (ROMP2_IsRoot()) then
-    write(u6,'(/,A,I3,A,I5)') ' Open-shell MP2 symmetry blocks: ',ns,'; MPI processes: ',workers
-    if (cho) then
-      write(u6,'(A)') ' Integral route: symmetry-blocked Cholesky'
-    else
-      write(u6,'(A)') ' Integral route: symmetry-blocked conventional'
-    end if
-    write(u6,'(A,8I6)') ' Basis functions per irrep: ',bs(1:ns)
-    write(u6,'(A,8I6)') ' Alpha occupied per irrep: ',occ(1:ns,1)
-    write(u6,'(A,8I6)') ' Beta occupied per irrep:  ',occ(1:ns,2)
-    write(u6,'(A,8I6)') ' Frozen orbitals per irrep: ',frozen(1:ns)
-    write(u6,'(A,8I8)') ' AO pairs per product irrep: ',blocks(1:ns)%np
-    write(u6,'(A,8I8)') ' OV pairs per product irrep: ',blocks(1:ns)%nq
-    write(u6,'(A)') ' Frozen convention: lowest occupied energies within each irrep and spin.'
+  if (ROMP2_IsRoot() .and. (iPL>=2)) then
+    call PrintResultsHeader()
+
     if (restricted) then
-      write(u6,'(A,F24.12)') ' ROHF reference energy: ',eref
-      write(u6,'(A,F24.12)') ' ROMP2 alpha singles:  ',singles(1)
-      write(u6,'(A,F24.12)') ' ROMP2 beta singles:   ',singles(2)
-      write(u6,'(A,F24.12)') ' ROMP2 AA doubles:     ',e(1)
-      write(u6,'(A,F24.12)') ' ROMP2 BB doubles:     ',e(2)
-      write(u6,'(A,F24.12)') ' ROMP2 AB doubles:     ',e(3)
-      write(u6,'(A,F24.12)') ' ROMP2 correlation:    ',corr
-      write(u6,'(A,F24.12)') ' ROMP2 total energy:   ',total
+      write(u6,'(6X,A,T48,A)') 'Method', '= Semicanonical ROHF-MBPT(2)'
     else
-      write(u6,'(A,F24.12)') ' UHF reference energy:     ',eref
-      write(u6,'(A,F24.12)') ' UMP2 AA correlation:     ',e(1)
-      write(u6,'(A,F24.12)') ' UMP2 BB correlation:     ',e(2)
-      write(u6,'(A,F24.12)') ' UMP2 AB correlation:     ',e(3)
-      write(u6,'(A,F24.12)') ' UMP2 correlation energy: ',corr
-      write(u6,'(A,F24.12)') ' UMP2 total energy:       ',total
+      write(u6,'(6X,A,T48,A)') 'Method', '= Canonical UMP2'
     end if
+    if (cho) then
+      write(u6,'(6X,A,T48,A)') 'Integral treatment', '= Symmetry-blocked Cholesky'
+    else
+      write(u6,'(6X,A,T48,A)') 'Integral treatment', '= Symmetry-blocked conventional'
+    end if
+    if (iPL>=3) then
+      write(u6,'(6X,A,T48,A,8I6)') 'Basis functions per irrep','=',bs(1:ns)
+      write(u6,'(6X,A,T48,A,8I6)') 'Alpha occupied per irrep','=',occ(1:ns,1)
+      write(u6,'(6X,A,T48,A,8I6)') 'Beta occupied per irrep','=',occ(1:ns,2)
+      write(u6,'(6X,A,T48,A,8I6)') 'Frozen orbitals per irrep','=',frozen(1:ns)
+      write(u6,'(6X,A,T48,A,8I8)') 'AO pairs per product irrep','=',blocks(1:ns)%np
+      write(u6,'(6X,A,T48,A,8I8)') 'OV pairs per product irrep','=',blocks(1:ns)%nq
+      write(u6,'(6X,A)') &
+        'Frozen-core convention: lowest occupied energies within each irrep and spin'
+    end if
+
+    if (restricted) then
+      write(u6,'(//6X,A,T48,A,F20.10,A)') 'ROHF reference energy','=',eref,' a.u.'
+      write(u6,'(6X,A,T48,A,F20.10,A)') 'Second-order correlation energy','=',corr,' a.u.'
+      write(u6,'(6X,A,T48,A,F20.10,A)') 'Total ROMP2 energy','=',total,' a.u.'
+    else
+      write(u6,'(//6X,A,T48,A,F20.10,A)') 'UHF reference energy','=',eref,' a.u.'
+      write(u6,'(6X,A,T48,A,F20.10,A)') 'Second-order correlation energy','=',corr,' a.u.'
+      write(u6,'(6X,A,T48,A,F20.10,A)') 'Total UMP2 energy','=',total,' a.u.'
+    end if
+    write(u6,*)
+    call PrintResult(u6,'(6X,A,T50,F19.10)', &
+                     'Total MBPT2 energy',0,'',[total],1)
+    write(u6,*)
   end if
   call Store_Energies(1,[total],1)
   call Put_iScalar('mp2prpt',0)
@@ -216,6 +226,17 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   call mma_deallocate(density,safe='*')
   call mma_deallocate(fock,safe='*')
 end subroutine Open_Shell_Symmetry_Driver
+
+subroutine PrintResultsHeader()
+
+  write(u6,'(/,6X,A)') &
+    '********************************************************************************************************'
+  write(u6,'(6X,A)') &
+    '*                                               Results                                                *'
+  write(u6,'(6X,A/)') &
+    '********************************************************************************************************'
+
+end subroutine PrintResultsHeader
 
 logical function MemoryOK(elements)
   real(kind=wp),intent(in) :: elements

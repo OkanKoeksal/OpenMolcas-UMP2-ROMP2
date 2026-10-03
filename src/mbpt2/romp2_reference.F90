@@ -49,7 +49,7 @@ subroutine ROMP2_Read(ierr,Message)
   call Get_iScalar('Multiplicity',mult)
   call Get_iScalar('nActel',nel)
   ! CAS(nOpen,nOpen), maximum spin: exactly one determinant.
-  ! Frozen/deleted RASSCF orbitals are excluded in this first version.
+  ! Frozen/deleted RASSCF orbitals are excluded from the determinant reference.
   if (ROMP2_Any((nf(1)/=0).or.(nv(1)/=0))) return
   if (ROMP2_Any((ns(1)<0).or.(nd(1)<0).or.(nel/=ns(1)).or.(mult/=ns(1)+1))) return
   nBas=nb(1)
@@ -248,7 +248,10 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
   if (ROMP2_Any(logical( &
       (.not.ieee_is_finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp), &
       kind=kind(.true.)))) then
-    write(u6,*) 'ROHF stored/reconstructed energies: ',ESCF,echeck
+    if (ROMP2_IsRoot()) then
+      write(u6,'(6X,A,T48,F20.10,A)') 'Stored ROHF reference energy',ESCF,' a.u.'
+      write(u6,'(6X,A,T48,F20.10,A)') 'Reconstructed ROHF energy',echeck,' a.u.'
+    end if
     Message='ROHF determinant energy does not match RASSCF; check reference and Hamiltonian.'
     goto 900
   end if
@@ -271,7 +274,8 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
     end do
   end do
   if (ROMP2_Any(grad>1.0e-5_wp)) then
-    write(u6,*) 'ROHF stationarity residual: ',grad
+    if (ROMP2_IsRoot()) &
+      write(u6,'(6X,A,T48,ES14.6)') 'ROHF stationarity residual',grad
     Message='ROHF orbital stationarity check failed; tighten RASSCF convergence.'
     goto 900
   end if

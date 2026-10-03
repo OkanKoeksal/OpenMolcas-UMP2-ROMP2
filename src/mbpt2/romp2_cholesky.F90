@@ -19,7 +19,7 @@ use Para_Info, only: nProcs,MyRank
 use ROMP2_Parallel
 use Data_Structures, only: SBA_Type,Allocate_DT,Deallocate_DT
 use Cholesky, only: NumCho,nDimRS,ChoNSym=>nSym,ChoNBas=>nBas
-use UMP2_Global, only: nBas,nOA,nOB,nVA,nVB,EOccA,EOccB,EVirA,EVirB,DenTol,EAA,EBB,EAB
+use UMP2_Global, only: nBas,nOA,nOB,nVA,nVB,EOccA,EOccB,EVirA,EVirB,DenTol,EAA,EBB,EAB,iPL
 use UMP2_Cholesky_Transform, only: UMP2_Transform_AO_Batch
 use stdalloc, only: mma_allocate,mma_deallocate,mma_maxDBLE
 use linalg_mod, only: mult
@@ -117,7 +117,8 @@ subroutine ROMP2_Cho_Open(ierr,Message)
   Skip=0
   Skip(1)=1
   iRedC=-1
-  if (ROMP2_IsRoot()) write(u6,'(A,I10)') ' ROMP2 Cholesky vectors (global): ',nGlobal
+  if (ROMP2_IsRoot() .and. (iPL >= 3)) &
+    write(u6,'(6X,A,I10)') 'Cholesky vectors (global)              = ',nGlobal
   ierr=0
   Message=''
 end subroutine ROMP2_Cho_Open

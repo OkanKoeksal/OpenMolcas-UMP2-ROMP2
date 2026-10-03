@@ -91,8 +91,9 @@ if (Method1 == 'UHF-SCF ') then
   return
 end if
 
-! Initial ROMP2 accepts only the determinant RASSCF subset; the reader
-! rejects multiconfigurational references rather than using RHF equations.
+! ROMP2 accepts the determinant RASSCF/ROHF subset.  The reference
+! reader rejects multiconfigurational wave functions rather than applying
+! the single-reference ROHF-MBPT(2) equations to an invalid reference.
 if ((Method1 == 'CASSCF  ') .or. (Method1 == 'RASSCF  ')) then
   call ROMP2_Driver(ireturn)
   return
