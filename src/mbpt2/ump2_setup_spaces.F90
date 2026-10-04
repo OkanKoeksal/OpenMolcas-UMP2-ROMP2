@@ -130,11 +130,11 @@ call mma_allocate(EVirB,nVB,label='UMP2 EVirB')
 ! Empty spaces are valid, for example the beta occupied space
 ! for a one-electron alpha-spin reference.
 
-if (nOA > 0) EOccA = EOrbA(nFro+1:nOccA)
-if (nOB > 0) EOccB = EOrbB(nFro+1:nOccB)
+if (nOA > 0) EOccA(:) = EOrbA(nFro+1:nOccA)
+if (nOB > 0) EOccB(:) = EOrbB(nFro+1:nOccB)
 
-if (nVA > 0) EVirA = EOrbA(nOccA+1:nOrb)
-if (nVB > 0) EVirB = EOrbB(nOccB+1:nOrb)
+if (nVA > 0) EVirA(:) = EOrbA(nOccA+1:nOrb)
+if (nVB > 0) EVirB(:) = EOrbB(nOccB+1:nOrb)
 
 contains
 

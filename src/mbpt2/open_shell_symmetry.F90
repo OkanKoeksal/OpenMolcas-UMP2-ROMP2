@@ -14,7 +14,7 @@
 module Open_Shell_Symmetry
 ! Abelian symmetry energy path. C1 continues to use the existing drivers.
 ! AO pair metrics and occupied-virtual pairs are grouped by product irrep.
-! Conventional metrics and transformed vectors are replicated: computation
+! Conventional metrics and transformed vectors are replicated; computation
 ! is distributed. This is an in-core implementation, with memory checks.
 use Definitions, only: wp,iwp,u6
 use Symmetry_Info, only: Mul
@@ -22,7 +22,6 @@ use Para_Info, only: nProcs,MyRank
 use ROMP2_Parallel, only: ROMP2_Any,ROMP2_IsRoot,ROMP2_IsParallel,ROMP2_SyncError
 use ROMP2_Semicanonical, only: ROMP2_Semi
 use stdalloc, only: mma_allocate,mma_deallocate,mma_maxDBLE
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 implicit none
 private
 public :: Open_Shell_Symmetry_Driver
@@ -101,8 +100,8 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
           call mma_allocate(c,n,n,label='symmetry semi coefficients')
           call mma_allocate(f,n,n,label='symmetry semi Fock')
           call mma_allocate(en,n,label='symmetry semi energies')
-          c=coeff(first:last,first:last,spin)
-          f=fock(first:last,first:last,spin)
+          c(:,:)=coeff(first:last,first:last,spin)
+          f(:,:)=fock(first:last,first:last,spin)
           call ROMP2_Semi(c,f,n,occ(s,spin),frozen(s),en,corr,rc)
           if (rc/=0) ierr=rc
           coeff(first:last,first:last,spin)=c
@@ -138,7 +137,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   if (ierr/=0) goto 900
   corr=sum(e)+sum(singles)
   total=eref+corr
-  if (ROMP2_Any(logical(.not.ieee_is_finite(total),kind=kind(.true.)))) then
+  if (ROMP2_Any(logical(.not.Open_Shell_Is_Finite(total),kind=kind(.true.)))) then
     message='Nonfinite symmetry MP2 total energy.'
     goto 900
   end if
@@ -238,12 +237,20 @@ subroutine PrintResultsHeader()
 
 end subroutine PrintResultsHeader
 
+elemental logical function Open_Shell_Is_Finite(x)
+  real(kind=wp),intent(in) :: x
+  Open_Shell_Is_Finite=(x<=huge(x)).and.(x>=-huge(x))
+end function Open_Shell_Is_Finite
+
 logical function MemoryOK(elements)
   real(kind=wp),intent(in) :: elements
-  integer(kind=iwp) :: available
+  integer(kind=iwp) :: available,bits_per_real,element_limit
   call mma_maxDBLE(available)
+  bits_per_real=int(storage_size(0.0_wp),kind=iwp)
+  element_limit=huge(available)
+  element_limit=element_limit/bits_per_real
   MemoryOK=.not.ROMP2_Any((elements>0.65_wp*real(available,wp)).or. &
-                       (elements>real(huge(available),wp)/real(storage_size(0.0_wp),wp)))
+                          (elements>real(element_limit,wp)))
   if (.not.MemoryOK) message='Insufficient memory or integer range for in-core symmetry MP2.'
 end function MemoryOK
 
@@ -283,7 +290,7 @@ subroutine ReadReference(ierr)
   call ReadCounts('nFro',nf,ierr)
   if (ierr/=0) return
   ierr=1
-  message='Reference-frozen orbitals are unsupported: freeze only in MBPT2.'
+  message='Reference-frozen orbitals are unsupported; freeze only in MBPT2.'
   if (any(nf(1:ns)/=0)) return
   if (restricted) then
     call ReadCounts('nAsh',active,ierr)
@@ -310,7 +317,7 @@ subroutine ReadReference(ierr)
     call Get_dScalar('SCF energy',eref)
   end if
   ierr=1
-  if (.not.ieee_is_finite(eref)) return
+  if (.not.Open_Shell_Is_Finite(eref)) return
   if (any(occ(1:ns,1)>bs(1:ns)).or.any(occ(1:ns,2)>bs(1:ns))) return
   nb=sum(bs(1:ns))
   if (nb<=0) return
@@ -337,7 +344,7 @@ subroutine ReadReference(ierr)
     if (n/=sum(bs(1:ns)**2)) return
     call mma_allocate(buffer,n,label='symmetry coefficient input')
     call Get_dArray(trim(label),buffer,n)
-    if (.not.all(ieee_is_finite(buffer))) then
+    if (.not.all(Open_Shell_Is_Finite(buffer))) then
       call mma_deallocate(buffer)
       return
     end if
@@ -358,14 +365,14 @@ subroutine ReadReference(ierr)
     if (.not.found) return
     if (l/=nb) return
     call Get_dArray(trim(label),eps(:,spin),nb)
-    if (.not.all(ieee_is_finite(eps(:,spin)))) return
+    if (.not.all(Open_Shell_Is_Finite(eps(:,spin)))) return
   end do
   ierr=0
 end subroutine ReadReference
 
 subroutine SynchronizeReference()
   ! Explicitly replicate root reference data before any MPI-distributed
-  ! Fock, transformation, or doubles work.  The C1 drivers are untouched:
+  ! Fock, transformation, or doubles work.  The C1 drivers are untouched;
   ! this routine is used only by the non-C1 symmetry path.
   real(kind=wp) :: scalar(1)
   if (.not.ROMP2_IsParallel()) return
@@ -583,7 +590,7 @@ subroutine ReadConventional(ierr)
           opt=2
           if (rc==0) then
             if (nmat/=1) rc=1
-            if (.not.all(ieee_is_finite(buffer(1:nq)))) rc=1
+            if (.not.all(Open_Shell_Is_Finite(buffer(1:nq)))) rc=1
           end if
           if (ROMP2_Any(rc/=0)) goto 710
 
@@ -617,7 +624,7 @@ subroutine ReadCholesky(ierr,initialized)
   use Data_Structures, only: SBA_Type,Allocate_DT,Deallocate_DT
   integer(kind=iwp),intent(out) :: ierr
   logical,intent(out) :: initialized
-  integer(kind=iwp) :: g,s,t,p,j,rc,nread,redset,skip(8),pos,mu,nu,iswap
+  integer(kind=iwp) :: g,s,t,p,j,rc,nread,redset,skip(8),pos,mu,nu,iswap,total_count
   integer(kind=iwp),allocatable :: counts(:,:)
   real(kind=wp),allocatable :: red(:)
   real(kind=wp) :: needed
@@ -640,10 +647,20 @@ subroutine ReadCholesky(ierr,initialized)
   counts=0
   counts(:,rankid+1)=NumCho(1:ns)
   if (ROMP2_IsParallel()) call gaIgOP(counts(1,1),size(counts),'+')
-  if (any(counts<0).or.(sum(real(counts,wp))>real(huge(pos)-1,wp))) then
+  if (any(counts<0)) then
     call mma_deallocate(counts)
     return
   end if
+  total_count=0_iwp
+  do s=1,ns
+    do j=1,workers
+      if (counts(s,j)>huge(total_count)-1_iwp-total_count) then
+        call mma_deallocate(counts)
+        return
+      end if
+      total_count=total_count+counts(s,j)
+    end do
+  end do
   needed=0.0_wp
   do g=1,ns
     blocks(g)%nlocal=counts(g,rankid+1)
@@ -688,14 +705,14 @@ subroutine ReadCholesky(ierr,initialized)
         t=symorb(nu)
         blocks(g)%vectors(p,j)=ao%SB(s)%A3(mu-off(s),nu-off(t),1)
       end do
-      if (.not.all(ieee_is_finite(blocks(g)%vectors(:,j)))) then
+      if (.not.all(Open_Shell_Is_Finite(blocks(g)%vectors(:,j)))) then
         rc=1
         exit
       end if
     end do
     call Deallocate_DT(ao)
     message='Symmetry Cholesky vector read failed.'
-    ! Rank-local vector loops have unequal lengths: synchronize afterwards.
+    ! Rank-local vector loops have unequal lengths; synchronize afterwards.
     call ROMP2_SyncError(rc,message)
     if (rc/=0) exit
   end do
@@ -731,7 +748,7 @@ subroutine ReadOne(ierr)
       if (pass==2) label='Mltpl  0'
       call RdOne(rc,opt,label,comp,buffer,sy)
       if (rc/=0) exit
-      if (.not.all(ieee_is_finite(buffer(1:np)))) then
+      if (.not.all(Open_Shell_Is_Finite(buffer(1:np)))) then
         rc=1
         exit
       end if
@@ -815,7 +832,7 @@ subroutine ReferenceFock(ierr)
     end do
   end do
   message='Symmetry ROHF orbitals are not orthonormal.'
-  if (ROMP2_Any(logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.)))) goto 900
+  if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.)))) goto 900
   fock=0.0_wp
   if (ROMP2_IsRoot()) then
     fock(:,:,1)=hcore
@@ -875,11 +892,11 @@ subroutine ReferenceFock(ierr)
   end if
   if (ROMP2_IsParallel()) call GADGOp(fock(1,1,1),size(fock),'+')
   message='Nonfinite symmetry reference Fock matrix.'
-  if (ROMP2_Any(logical(.not.all(ieee_is_finite(fock)),kind=kind(.true.)))) goto 900
+  if (ROMP2_Any(logical(.not.all(Open_Shell_Is_Finite(fock)),kind=kind(.true.)))) goto 900
   call Get_dScalar('PotNuc',enuc)
   check=enuc+0.5_wp*(sum(density(:,:,1)*(hcore+fock(:,:,1)))+sum(density(:,:,2)*(hcore+fock(:,:,2))))
   message='Reconstructed symmetry ROHF energy differs from RASSCF.'
-  if (ROMP2_Any(logical((.not.ieee_is_finite(check)).or.(abs(check-eref)>1.0e-7_wp), &
+  if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(check)).or.(abs(check-eref)>1.0e-7_wp), &
                        kind=kind(.true.)))) goto 900
   ! Stationarity test in the shared spatial ROHF basis, before rotation.
   grad=0.0_wp
@@ -903,8 +920,8 @@ subroutine ReferenceFock(ierr)
     end do
   end do
   grad=maxval(abs(vec))
-  message='ROHF symmetry stationarity check failed: tighten RASSCF convergence.'
-  if (ROMP2_Any(logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) goto 900
+  message='ROHF symmetry stationarity check failed; tighten RASSCF convergence.'
+  if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) goto 900
   ierr=0
 900 continue
   call mma_deallocate(work)
@@ -1039,7 +1056,7 @@ subroutine Doubles(energy,ierr)
             if ((spin==other).and.(b>=a)) cycle
             if (Mul(symorb(i),symorb(a))/=Mul(symorb(j),symorb(b))) cycle
             den=eps(i,spin)+eps(j,other)-eps(a,spin)-eps(b,other)
-            if ((.not.ieee_is_finite(den)).or.(abs(den)<=1.0e-12_wp)) then
+            if ((.not.Open_Shell_Is_Finite(den)).or.(abs(den)<=1.0e-12_wp)) then
               ierr=1
               cycle
             end if
@@ -1051,7 +1068,7 @@ subroutine Doubles(energy,ierr)
       end do
     end do
   end do
-  if (.not.all(ieee_is_finite(energy))) ierr=1
+  if (.not.all(Open_Shell_Is_Finite(energy))) ierr=1
   message='Invalid denominator or nonfinite symmetry doubles energy.'
   call ROMP2_SyncError(ierr,message)
   if (ierr/=0) return
