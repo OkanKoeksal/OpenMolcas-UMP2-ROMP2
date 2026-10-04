@@ -26,12 +26,12 @@ subroutine MP2_Driver(ireturn)
 !                                                                      *
 !       - code using Cholesky vectors directly                         *
 !         October 2004, T. B. Pedersen                                 *
-!         Dept. of Chemical Physics                                   *
+!         Dept. of Theoretical Physics                                 *
 !         University of Lund, Sweden                                   *
 !                                                                      *
 !       - code for the "Scaled Opposite-Spin" (SOS) MP2                *
 !         May 2007, F. Aquilante                                       *
-!         Dept. of Chemical Physics                                   *
+!         Dept. of Theoretical Chemistry                               *
 !         University of Lund, Sweden                                   *
 !                                                                      *
 !       - code for Laplace-SOS-MP2 for Cholesky/DF                     *
