@@ -23,7 +23,6 @@ use UMP2_Global, only: nBas,nOA,nOB,nVA,nVB,EOccA,EOccB,EVirA,EVirB,DenTol,EAA,E
 use UMP2_Cholesky_Transform, only: UMP2_Transform_AO_Batch
 use stdalloc, only: mma_allocate,mma_deallocate,mma_maxDBLE
 use linalg_mod, only: mult
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 implicit none
 private
 public :: ROMP2_Cho_Open,ROMP2_Cho_Close,ROMP2_Cho_Fock,ROMP2_Cho_Energy
@@ -34,10 +33,18 @@ real(kind=wp),allocatable,save :: RedVec(:)
 type(SBA_Type),target,save :: AO
 contains
 
+elemental logical function ROMP2_Cho_Is_Finite(x)
+
+  real(kind=wp), intent(in) :: x
+
+  ROMP2_Cho_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
+
+end function ROMP2_Cho_Is_Finite
+
 subroutine ROMP2_Cho_Open(ierr,Message)
   integer(kind=iwp),intent(out) :: ierr
   character(len=*),intent(out) :: Message
-  integer(kind=iwp) :: Dims(1),Available,nWorkers
+  integer(kind=iwp) :: Dims(1),Available,nWorkers,iWorker,bits_per_real,element_limit
   integer(kind=iwp),allocatable :: Counts(:)
   real(kind=wp) :: Required
 #include "warnings.h"
@@ -75,12 +82,15 @@ subroutine ROMP2_Cho_Open(ierr,Message)
   else
     Counts(1)=nVec
   end if
-  if (sum(real(Counts,wp))>real(huge(nGlobal)-1,wp)) then
-    call mma_deallocate(Counts)
-    Message='Global Cholesky count exceeds integer range.'
-    return
-  end if
-  nGlobal=sum(Counts)
+  nGlobal=0
+  do iWorker=1,nWorkers
+    if ((Counts(iWorker)<0).or.(Counts(iWorker)>huge(nGlobal)-nGlobal)) then
+      call mma_deallocate(Counts)
+      Message='Global Cholesky count exceeds integer range.'
+      return
+    end if
+    nGlobal=nGlobal+Counts(iWorker)
+  end do
   Offset=0
   if (ROMP2_IsParallel().and.(MyRank>0)) Offset=sum(Counts(1:MyRank))
   call mma_deallocate(Counts)
@@ -104,8 +114,11 @@ subroutine ROMP2_Cho_Open(ierr,Message)
   nRead=max(1,nRead)
   Required=real(nRead,wp)+real(nBas,wp)**2
   call mma_maxDBLE(Available)
+  bits_per_real=int(storage_size(0.0_wp),kind=iwp)
+  element_limit=huge(Available)
+  element_limit=element_limit/bits_per_real
   if (ROMP2_Any((Required>0.75_wp*real(Available,wp)).or. &
-      (Required>real(huge(Available)-1,wp)/real(storage_size(0.0_wp),wp)))) then
+      (Required>real(element_limit,wp)))) then
     Message='Insufficient memory or integer range for ROMP2 AO Cholesky reader.'
     return
   end if
@@ -139,7 +152,7 @@ subroutine ReadVector(iVec,ierr,Message)
   end if
   ierr=1
   Message='Nonfinite ROMP2 AO Cholesky vector.'
-  if (.not.all(ieee_is_finite(AO%SB(1)%A3))) return
+  if (.not.all(ROMP2_Cho_Is_Finite(AO%SB(1)%A3))) return
   Scale=max(1.0_wp,maxval(abs(AO%SB(1)%A3(:,:,1))))
   Message='ROMP2 AO Cholesky vector is not a full symmetric matrix.'
   if (maxval(abs(AO%SB(1)%A3(:,:,1)-transpose(AO%SB(1)%A3(:,:,1))))>1.0e-12_wp*Scale) return
@@ -199,7 +212,7 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
     call GADGOp(FB(1,1),size(FB),'+')
   end if
   if (ROMP2_Any(logical( &
-      (.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB))), &
+      (.not.all(ROMP2_Cho_Is_Finite(FA))).or.(.not.all(ROMP2_Cho_Is_Finite(FB))), &
       kind=kind(.true.)))) then
     ierr=1
     Message='Nonfinite ROMP2 Cholesky Fock matrix.'
@@ -213,7 +226,7 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
   ! The shared UMP2 transformation excludes nFro occupied orbitals.
   integer(kind=iwp),intent(out) :: ierr
   character(len=*),intent(out) :: Message
-  integer(kind=iwp) :: Available,iVec,GlobalVec
+  integer(kind=iwp) :: Available,iVec,GlobalVec,bits_per_real,element_limit
   real(kind=wp) :: NAElements,NBElements,Required
   real(kind=wp),allocatable :: La(:,:,:),Lb(:,:,:)
   ierr=1
@@ -221,8 +234,10 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
   if (ROMP2_Any((.not.ChoReady).or.(.not.HaveAO))) return
   NAElements=real(nVA,wp)*real(nOA,wp)*real(nGlobal,wp)
   NBElements=real(nVB,wp)*real(nOB,wp)*real(nGlobal,wp)
-  if (ROMP2_Any(max(NAElements,NBElements)> &
-      real(huge(Available)-1,wp)/real(storage_size(0.0_wp),wp))) then
+  bits_per_real=int(storage_size(0.0_wp),kind=iwp)
+  element_limit=huge(Available)
+  element_limit=element_limit/bits_per_real
+  if (ROMP2_Any(max(NAElements,NBElements)>real(element_limit,wp))) then
     Message='ROMP2 transformed vectors exceed supported integer indexing range.'
     return
   end if
@@ -253,7 +268,7 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
     if (size(Lb)>0) call GADGOp(Lb(1,1,1),size(Lb),'+')
   end if
   if (ROMP2_Any(logical( &
-      (.not.all(ieee_is_finite(La))).or.(.not.all(ieee_is_finite(Lb))), &
+      (.not.all(ROMP2_Cho_Is_Finite(La))).or.(.not.all(ROMP2_Cho_Is_Finite(Lb))), &
       kind=kind(.true.)))) then
     ierr=1
     Message='Nonfinite assembled Cholesky vectors.'
@@ -262,7 +277,7 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
   call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB,nOA,nVA,nOB,nVB,nGlobal,DenTol,EAA,EBB,EAB,ierr)
   if (ierr/=0) then
     Message='ROMP2 Cholesky doubles failed: check orbital-energy denominators.'
-  else if (.not.all(ieee_is_finite([EAA,EBB,EAB]))) then
+  else if (.not.all(ROMP2_Cho_Is_Finite([EAA,EBB,EAB]))) then
     ierr=1
     Message='Nonfinite ROMP2 Cholesky doubles energy.'
   else

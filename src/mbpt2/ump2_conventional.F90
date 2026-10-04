@@ -25,7 +25,6 @@
 ! are included exactly twice through the two distinct matrix entries.
 module UMP2_Conventional
 
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Definitions, only: wp, iwp, u6
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
 
@@ -34,6 +33,14 @@ private
 public :: UMP2_Conventional_Energy
 
 contains
+
+elemental logical function UMP2_Conv_Is_Finite(x)
+
+  real(kind=wp), intent(in) :: x
+
+  UMP2_Conv_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
+
+end function UMP2_Conv_Is_Finite
 
 subroutine UMP2_Conventional_Energy(ierr,Message)
 
@@ -143,7 +150,7 @@ subroutine UMP2_Conventional_Energy(ierr,Message)
     EBB = Components(2)
     EAB = Components(3)
   end if
-  if ((ierr == 0) .and. (.not. all(ieee_is_finite([EAA,EBB,EAB])))) then
+  if ((ierr == 0) .and. (.not. all(UMP2_Conv_Is_Finite([EAA,EBB,EAB])))) then
     ierr = _RC_GENERAL_ERROR_
     Message = 'Nonfinite globally reduced conventional UMP2 energy.'
   end if
@@ -168,12 +175,14 @@ contains
   end subroutine SyncError
 
   subroutine CheckReference()
+    integer(kind=iwp) :: IntegerLimit
+
     if ((nSym /= 1) .or. (nBas < 1) .or. (nOrb < 1) .or. (nOrb > nBas)) then
       ierr = _RC_INPUT_ERROR_
       Message = 'Conventional UMP2 requires a valid C1 UHF reference.'
       return
     end if
-    if ((.not. ieee_is_finite(DenTol)) .or. (DenTol <= 0.0_wp)) then
+    if ((.not. UMP2_Conv_Is_Finite(DenTol)) .or. (DenTol <= 0.0_wp)) then
       ierr = _RC_INPUT_ERROR_
       Message = 'Invalid UMP2 denominator tolerance.'
       return
@@ -198,7 +207,10 @@ contains
       return
     end if
     ! Bound the product before integer multiplication, including lBuf=nPair+1.
-    if (real(nBas,wp)*(real(nBas,wp)+1.0_wp) >= real(huge(nPair),wp)) then
+    ! Use a variable integer limit so strict compilers do not diagnose the
+    ! unavoidable loss of precision in converting HUGE(integer) to real.
+    IntegerLimit = huge(nPair)
+    if (real(nBas,wp)*(real(nBas,wp)+1.0_wp) >= real(IntegerLimit,wp)) then
       ierr = _RC_MEMORY_ERROR_
       Message = 'Conventional UMP2 AO-pair dimensions exceed the integer range.'
       return
@@ -208,7 +220,7 @@ contains
   subroutine TransformRight(C,nOcc,nO,nV,MaxO,MaxV)
     integer(kind=iwp), intent(in) :: nOcc,nO,nV,MaxO,MaxV
     real(kind=wp), intent(in) :: C(nBas,nOrb)
-    integer(kind=iwp) :: Available, q, b, j, nMat, iOpt, ReadRC
+    integer(kind=iwp) :: Available, IntegerLimit, q, b, j, nMat, iOpt, ReadRC
     real(kind=wp) :: SizeHalf, PeakFirst, PeakSecond, Required
     real(kind=wp), allocatable :: Buf(:), AO(:,:), Tmp(:,:), OV(:,:)
 
@@ -220,7 +232,9 @@ contains
     PeakSecond = real(nBas,wp)**2+real(nBas,wp)*real(MaxO,wp)+ &
                  real(MaxV,wp)*real(MaxO,wp)*real(nV,wp)
     Required = SizeHalf+max(PeakFirst,PeakSecond)
-    if (Required >= real(huge(Available),wp)/2.0_wp) then
+    IntegerLimit = huge(Available)
+    IntegerLimit = ishft(IntegerLimit,-1)
+    if (Required >= real(IntegerLimit,wp)) then
       ierr = _RC_MEMORY_ERROR_
       Message = 'Conventional UMP2 intermediate dimensions exceed the supported integer range.'
     end if
@@ -254,7 +268,7 @@ contains
         if ((ReadRC /= 0) .or. (nMat /= 1)) then
           ierr = _RC_IO_ERROR_READ_
           Message = 'Failed to read a complete conventional AO-pair row.'
-        else if (.not. all(ieee_is_finite(Buf(1:nPair)))) then
+        else if (.not. all(UMP2_Conv_Is_Finite(Buf(1:nPair)))) then
           ierr = _RC_IO_ERROR_READ_
           Message = 'Nonfinite value in stored AO integrals.'
         end if
@@ -267,7 +281,7 @@ contains
         call UnpackPair(Buf(1:nPair),AO,nBas)
         call DGEMM_('N','N',nBas,nO,nBas,1.0_wp,AO,nBas,C(1,nFro+1),nBas,0.0_wp,Tmp,nBas)
         call DGEMM_('T','N',nV,nO,nBas,1.0_wp,C(1,nOcc+1),nBas,Tmp,nBas,0.0_wp,OV,nV)
-        if (.not. all(ieee_is_finite(OV))) then
+        if (.not. all(UMP2_Conv_Is_Finite(OV))) then
           ierr = _RC_GENERAL_ERROR_
           Message = 'Nonfinite conventional half-transformed integrals.'
         end if
@@ -317,7 +331,7 @@ contains
         call DGEMM_('N','N',nBas,nO,nBas,1.0_wp,AO,nBas,C(1,nFro+1),nBas,0.0_wp,Tmp,nBas)
         call DGEMM_('T','N',nV,nO,nBas,1.0_wp,C(1,nOcc+1),nBas,Tmp,nBas,0.0_wp,G(1,1,b),nV)
       end do
-      if (.not. all(ieee_is_finite(G))) then
+      if (.not. all(UMP2_Conv_Is_Finite(G))) then
         ierr = _RC_GENERAL_ERROR_
         Message = 'Nonfinite conventional MO integrals.'
         exit OccupiedRight
@@ -328,7 +342,7 @@ contains
           do a=1,nV
             if (SameSpin .and. (a == b)) cycle
             Den = Eo(i)+EoR(j)-Ev(a)-EvR(b)
-            if ((.not. ieee_is_finite(Den)) .or. (abs(Den) <= DenTol)) then
+            if ((.not. UMP2_Conv_Is_Finite(Den)) .or. (abs(Den) <= DenTol)) then
               ierr = _RC_GENERAL_ERROR_
               Message = 'Invalid or near-zero conventional UMP2 orbital-energy denominator.'
               exit OccupiedRight
@@ -344,7 +358,7 @@ contains
         end do
       end do
     end do OccupiedRight
-    if (.not. ieee_is_finite(Energy)) then
+    if (.not. UMP2_Conv_Is_Finite(Energy)) then
       ierr = _RC_GENERAL_ERROR_
       Message = 'Nonfinite conventional UMP2 correlation energy.'
     end if

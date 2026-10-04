@@ -32,8 +32,8 @@ implicit none
 integer(kind=iwp), intent(out) :: ireturn
 integer(kind=iwp) :: ierr, FinalRC, nChoLocal, nChoGlobal
 integer(kind=iwp) :: nRead, iVec, iRedC, GlobalVec, LocalVectorErr
-integer(kind=iwp) :: ChoOffset, nChoMin, nChoMax, nWorkers
-integer(kind=iwp) :: Available, Skip(8), Dims(1), iTol
+integer(kind=iwp) :: ChoOffset, nChoMin, nChoMax, nWorkers, iWorker
+integer(kind=iwp) :: Available, Skip(8), Dims(1), iTol, bits_per_real, element_limit
 integer(kind=iwp), external :: Cho_X_GetTol
 integer(kind=iwp), allocatable :: ChoCounts(:)
 logical(kind=iwp) :: IsDF, ChoReady, HaveAO
@@ -146,7 +146,16 @@ else
     ChoCounts(1) = nChoLocal
   end if
 
-  nChoGlobal = sum(ChoCounts)
+  nChoGlobal = 0
+  do iWorker=1,nWorkers
+    if ((ChoCounts(iWorker) < 0) .or. &
+        (ChoCounts(iWorker) > huge(nChoGlobal)-nChoGlobal)) then
+      call Fail(_RC_CHO_INI_,'Global Cholesky-vector count exceeds integer range.')
+      return
+    end if
+    nChoGlobal = nChoGlobal+ChoCounts(iWorker)
+  end do
+
   if (nChoGlobal <= 0) then
     call Fail(_RC_CHO_INI_,'The global Cholesky-vector count is zero.')
     return
@@ -183,8 +192,10 @@ else
   NAElements = real(nVA,wp)*real(nOA,wp)*real(nChoGlobal,wp)
   NBElements = real(nVB,wp)*real(nOB,wp)*real(nChoGlobal,wp)
 
-  if (max(NAElements,NBElements,real(nBas,wp)**2) > &
-      real(huge(nRead)-1,wp)/real(storage_size(0.0_wp),wp)) then
+  bits_per_real = int(storage_size(0.0_wp),kind=iwp)
+  element_limit = huge(nRead)
+  element_limit = element_limit/bits_per_real
+  if (max(NAElements,NBElements,real(nBas,wp)**2) > real(element_limit,wp)) then
     call Fail(_RC_MEMORY_ERROR_, &
               'UMP2 array dimensions exceed the supported integer indexing range.')
     return

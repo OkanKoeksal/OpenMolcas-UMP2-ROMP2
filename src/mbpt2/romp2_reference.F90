@@ -18,11 +18,19 @@ use ROMP2_Parallel
 use Para_Info, only: nProcs,MyRank
 use ROMP2_Cholesky, only: ROMP2_Cho_Fock
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 implicit none
 private
 public :: ROMP2_Read, ROMP2_Fock
 contains
+
+elemental logical function ROMP2_Ref_Is_Finite(x)
+
+  real(kind=wp), intent(in) :: x
+
+  ROMP2_Ref_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
+
+end function ROMP2_Ref_Is_Finite
+
 subroutine ROMP2_Read(ierr,Message)
   integer(kind=iwp), intent(out) :: ierr
   character(len=*), intent(out) :: Message
@@ -57,7 +65,7 @@ subroutine ROMP2_Read(ierr,Message)
   nOccA=nd(1)+ns(1)
   nOccB=nd(1)
   if (ROMP2_Any((nBas<1).or.(nOccA>nBas))) return
-  if (ROMP2_Any(real(nBas,wp)**2>=real(huge(l),wp)/2.0_wp)) return
+  if (ROMP2_Any(nBas>huge(l)/nBas)) return
   call qpg_dArray('RASSCF orbitals',found,l)
   if (ROMP2_Any(.not.found)) return
   if (ROMP2_Any(l/=nBas*nBas)) return
@@ -66,10 +74,10 @@ subroutine ROMP2_Read(ierr,Message)
   call mma_allocate(EOrbA,nOrb,label='ROMP2 alpha energies')
   call mma_allocate(EOrbB,nOrb,label='ROMP2 beta energies')
   call Get_dArray('RASSCF orbitals',CAlpha,nBas*nBas)
-  CBeta=CAlpha
+  CBeta(:,:)=CAlpha(:,:)
   call Get_dScalar('Last energy',ESCF)
   if (ROMP2_Any(logical( &
-      (.not.all(ieee_is_finite(CAlpha))).or.(.not.ieee_is_finite(ESCF)), &
+      (.not.all(ROMP2_Ref_Is_Finite(CAlpha))).or.(.not.ROMP2_Ref_Is_Finite(ESCF)), &
       kind=kind(.true.)))) return
   ReferenceMethod='ROHF    '
   ierr=0
@@ -84,7 +92,7 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
   character(len=*), intent(out) :: Message
   real(kind=wp), allocatable :: ERI(:,:,:,:),H(:,:),S(:,:),DA(:,:),DB(:,:),Buf(:),T(:,:),MA(:,:),MB(:,:)
   real(kind=wp) :: required,enuc,echeck,grad,oa,ob,pa,pb
-  integer(kind=iwp) :: avail,np,rc,rc2,lu,comp,sym,opt,i,j,k,l,q,nmat,fs,fbasis(8),skip(8)
+  integer(kind=iwp) :: avail,integer_limit,np,rc,rc2,lu,comp,sym,opt,i,j,k,l,q,nmat,fs,fbasis(8),skip(8)
   logical(kind=iwp) :: exists,square
   logical :: opened,oneopened
   character(len=8) :: label
@@ -95,7 +103,9 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
   required=14.0_wp*real(nBas,wp)**2+131072.0_wp
   if (.not.DoCholesky) required=required+real(nBas,wp)**4
   call mma_maxDBLE(avail)
-  if (ROMP2_Any((required>0.8_wp*real(avail,wp)).or.(required>real(huge(avail),wp)/2.0_wp))) then
+  integer_limit=huge(avail)
+  integer_limit=ishft(integer_limit,-1)
+  if (ROMP2_Any((required>0.8_wp*real(avail,wp)).or.(required>real(integer_limit,wp)))) then
     Message='Insufficient memory for ROMP2 reference Fock construction.'
     return
   end if
@@ -157,7 +167,7 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
     MA(i,i)=MA(i,i)-1.0_wp
   end do
   if (ROMP2_Any(logical( &
-      (.not.all(ieee_is_finite(MA))).or.(maxval(abs(MA))>1.0e-7_wp), &
+      (.not.all(ROMP2_Ref_Is_Finite(MA))).or.(maxval(abs(MA))>1.0e-7_wp), &
       kind=kind(.true.)))) then
     Message='ROHF orbitals are not orthonormal in the ONEINT overlap metric.'
     goto 900
@@ -186,7 +196,7 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
         opt=2
         if (rc==0) then
           if (nmat/=1) rc=1
-          if (.not.all(ieee_is_finite(Buf(1:np)))) rc=1
+          if (.not.all(ROMP2_Ref_Is_Finite(Buf(1:np)))) rc=1
         end if
         if (ROMP2_Any(rc/=0)) goto 900
         if (ROMP2_IsParallel()) call GADGOp(Buf(1),np,'+')
@@ -241,12 +251,12 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
     end if
   end if
   if (ROMP2_Any(logical( &
-      (.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB))), &
+      (.not.all(ROMP2_Ref_Is_Finite(FA))).or.(.not.all(ROMP2_Ref_Is_Finite(FB))), &
       kind=kind(.true.)))) goto 900
   call Get_dScalar('PotNuc',enuc)
   echeck=enuc+0.5_wp*(sum(DA*(H+FA))+sum(DB*(H+FB)))
   if (ROMP2_Any(logical( &
-      (.not.ieee_is_finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp), &
+      (.not.ROMP2_Ref_Is_Finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp), &
       kind=kind(.true.)))) then
     if (ROMP2_IsRoot()) then
       write(u6,'(6X,A,T48,F20.10,A)') 'Stored ROHF reference energy',ESCF,' a.u.'

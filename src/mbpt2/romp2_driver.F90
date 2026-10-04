@@ -21,7 +21,6 @@ use ROMP2_Cholesky, only: ROMP2_Cho_Open,ROMP2_Cho_Close,ROMP2_Cho_Energy
 use ROMP2_Semicanonical, only: ROMP2_Semi
 use ROMP2_Conventional, only: ROMP2_Conventional_Energy
 use stdalloc, only: mma_allocate,mma_deallocate
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 implicit none
 #include "warnings.h"
 integer(kind=iwp),intent(out) :: ireturn
@@ -99,7 +98,7 @@ ECorr=E1A+E1B+EAA+EBB+EAB
 ETotal=ESCF+ECorr
 ! Assignment converts the intrinsic result to the default logical kind
 ! expected by ROMP2_Any, including builds with promoted default kinds.
-NonfiniteTotal=.not.ieee_is_finite(ETotal)
+NonfiniteTotal=.not.ROMP2_Driver_Is_Finite(ETotal)
 if (ROMP2_Any(NonfiniteTotal)) then
   Message='Nonfinite ROMP2 total energy.'
   goto 900
@@ -167,6 +166,14 @@ call mma_deallocate(FB,safe='*')
 call UMP2_Clean()
 
 contains
+
+elemental logical function ROMP2_Driver_Is_Finite(x)
+
+  real(kind=wp), intent(in) :: x
+
+  ROMP2_Driver_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
+
+end function ROMP2_Driver_Is_Finite
 
 subroutine PrintResultsHeader()
 
