@@ -14,13 +14,12 @@
 
 subroutine UMP2_Driver(ireturn)
 
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Definitions, only: wp, iwp, u6
 use Para_Info, only: nProcs, MyRank, Is_Real_Par
 use Data_Structures, only: SBA_Type, Allocate_DT, Deallocate_DT
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
 use Cholesky, only: NumCho, nDimRS, ChoNSym => nSym, ChoNBas => nBas
-use UMP2_Global, only: UMP2_Clean, nSym, nBas, nOccA, nOccB, nFro, &
+use UMP2_Global, only: UMP2_Clean, nBas, nOccA, nOccB, nFro, &
                        nOA, nOB, nVA, nVB, EOccA, EOccB, EVirA, EVirB, &
                        DoCholesky, DenTol, ESCF, EAA, EBB, EAB, ECorr, &
                        ETotal, EnergyReady, iPL
@@ -74,7 +73,7 @@ if (Parallel) nWorkers = nProcs
 call UMP2_Clean()
 
 ! Energy evaluations are also allowed at displaced geometries.
-! NUMERICAL_GRADIENT disables real parallelism inside each displacement:
+! NUMERICAL_GRADIENT disables real parallelism inside each displacement;
 ! the existing Is_Real_Par guards select the local serial energy path.
 ! Analytic UMP2 densities and gradients are not computed here.
 
@@ -100,7 +99,7 @@ call DecideOnCholesky(DoCholesky)
 call DecideOnDF(IsDF)
 if (IsDF) then
   call Fail(_RC_NOT_AVAILABLE_, &
-            'UMP2 RI integrals are unsupported: use Cholesky or conventional stored AO integrals.')
+            'UMP2 RI integrals are unsupported; use Cholesky or conventional stored AO integrals.')
   return
 end if
 
@@ -296,8 +295,8 @@ else
 
   end if
 
-  if ((.not. all(ieee_is_finite(La))) .or. &
-      (.not. all(ieee_is_finite(Lb)))) then
+  if ((.not. all(UMP2_Is_Finite(La))) .or. &
+      (.not. all(UMP2_Is_Finite(Lb)))) then
     call Fail(_RC_GENERAL_ERROR_, &
               'Nonfinite globally assembled transformed Cholesky vectors.')
     return
@@ -314,7 +313,7 @@ else
     if (MyRank == 0) &
       write(u6,'(A,I8)') ' UMP2 energy-kernel return code: ',ierr
     call Fail(_RC_GENERAL_ERROR_, &
-              'UMP2 energy evaluation failed: check orbital-energy denominators.')
+              'UMP2 energy evaluation failed; check orbital-energy denominators.')
     return
   end if
 
@@ -323,7 +322,7 @@ end if
 ECorr = EAA+EBB+EAB
 ETotal = ESCF+ECorr
 
-if (.not. all(ieee_is_finite([ESCF,EAA,EBB,EAB,ECorr,ETotal]))) then
+if (.not. all(UMP2_Is_Finite([ESCF,EAA,EBB,EAB,ECorr,ETotal]))) then
   call Fail(_RC_GENERAL_ERROR_,'UMP2 produced a nonfinite energy.')
   return
 end if
@@ -383,6 +382,15 @@ call UMP2_Clean()
 ireturn = _RC_ALL_IS_WELL_
 
 contains
+
+elemental logical function UMP2_Is_Finite(x)
+
+  real(kind=wp), intent(in) :: x
+
+  UMP2_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
+
+end function UMP2_Is_Finite
+
 
 subroutine PrintResultsHeader()
 

@@ -15,7 +15,6 @@ subroutine UMP2_Read_Reference(ierr,Message)
 
 use Definitions, only: wp, iwp
 use stdalloc, only: mma_allocate, mma_deallocate
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use UMP2_Global, only: UMP2_Clean, ReferenceMethod, &
                        nSym, nBas, nOrb, nOccA, nOccB, &
                        CAlpha, CBeta, EOrbA, EOrbB, ESCF
@@ -123,7 +122,7 @@ end if
 
 call Get_dScalar('SCF energy',ESCF)
 
-if (.not. ieee_is_finite(ESCF)) then
+if (.not. UMP2_Is_Finite(ESCF)) then
   call Fail('The SCF energy is not finite.')
   return
 end if
@@ -135,14 +134,14 @@ call ReadRealRecord('SCF orbitals',nCoeff,nFull,Buffer)
 if (ierr /= 0) return
 
 call mma_allocate(CAlpha,nBas,nOrb,label='UMP2 CAlpha')
-CAlpha = reshape(Buffer(1:nCoeff),shape(CAlpha))
+CAlpha(:,:) = reshape(Buffer(1:nCoeff),shape(CAlpha))
 call mma_deallocate(Buffer)
 
 call ReadRealRecord('SCF orbitals_ab',nCoeff,nFull,Buffer)
 if (ierr /= 0) return
 
 call mma_allocate(CBeta,nBas,nOrb,label='UMP2 CBeta')
-CBeta = reshape(Buffer(1:nCoeff),shape(CBeta))
+CBeta(:,:) = reshape(Buffer(1:nCoeff),shape(CBeta))
 call mma_deallocate(Buffer)
 
 ! Orbital-energy records can similarly contain trailing entries.
@@ -152,17 +151,26 @@ call ReadRealRecord('OrbE',nOrb,nBas,Buffer)
 if (ierr /= 0) return
 
 call mma_allocate(EOrbA,nOrb,label='UMP2 EOrbA')
-EOrbA = Buffer(1:nOrb)
+EOrbA(:) = Buffer(1:nOrb)
 call mma_deallocate(Buffer)
 
 call ReadRealRecord('OrbE_ab',nOrb,nBas,Buffer)
 if (ierr /= 0) return
 
 call mma_allocate(EOrbB,nOrb,label='UMP2 EOrbB')
-EOrbB = Buffer(1:nOrb)
+EOrbB(:) = Buffer(1:nOrb)
 call mma_deallocate(Buffer)
 
 contains
+
+elemental logical function UMP2_Is_Finite(x)
+
+  real(kind=wp), intent(in) :: x
+
+  UMP2_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
+
+end function UMP2_Is_Finite
+
 
 subroutine ReadCount(Label,Value)
 
@@ -225,7 +233,7 @@ subroutine ReadRealRecord(Label,nKeep,nPadded,Values)
   ! Trailing padding is not part of the retained reference.
   ! Check only entries that will actually be used.
 
-  if (.not. all(ieee_is_finite(Values(1:nKeep)))) then
+  if (.not. all(UMP2_Is_Finite(Values(1:nKeep)))) then
     call mma_deallocate(Values)
     call Fail('Nonfinite RUNFILE data: '//trim(Label))
     return

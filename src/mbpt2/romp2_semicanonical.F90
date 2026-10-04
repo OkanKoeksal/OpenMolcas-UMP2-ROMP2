@@ -14,11 +14,16 @@
 module ROMP2_Semicanonical
 use Definitions, only: wp, iwp
 use stdalloc, only: mma_allocate, mma_deallocate
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 implicit none
 private
 public :: ROMP2_Semi
 contains
+
+elemental logical function ROMP2_Is_Finite(x)
+  real(kind=wp), intent(in) :: x
+  ROMP2_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
+end function ROMP2_Is_Finite
+
 subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
   integer(kind=iwp), intent(in) :: n,no,nFrozen
   real(kind=wp), intent(inout) :: C(n,n)
@@ -39,7 +44,7 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
     ierr=4
     return
   end if
-  if ((.not.all(ieee_is_finite(C))).or.(.not.all(ieee_is_finite(F)))) then
+  if ((.not.all(ROMP2_Is_Finite(C))).or.(.not.all(ROMP2_Is_Finite(F)))) then
     ierr=3
     return
   end if
@@ -62,7 +67,7 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
     if (nBlock==0) cycle
     call mma_allocate(U,nBlock,nBlock,label='ROMP2 eigenvectors')
     call mma_allocate(W,max(1,3*nBlock),label='ROMP2 eigensolver work')
-    U=M(first:last,first:last)
+    U(:,:)=M(first:last,first:last)
     call DSYEV_('V','U',nBlock,U,nBlock,eps(first),W,size(W),info)
     if (info/=0) then
       ierr=1
@@ -83,7 +88,7 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
     do i=nFrozen+1,no
       do a=no+1,n
         den=eps(i)-eps(a)
-        if ((.not. ieee_is_finite(den)) .or. (abs(den)<=1.0e-12_wp)) then
+        if ((.not. ROMP2_Is_Finite(den)) .or. (abs(den)<=1.0e-12_wp)) then
           ierr=2
           exit
         end if
@@ -91,8 +96,8 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
       end do
       if (ierr/=0) exit
     end do
-    if (.not. all(ieee_is_finite(eps))) ierr=3
-    if (.not. ieee_is_finite(E1)) ierr=3
+    if (.not. all(ROMP2_Is_Finite(eps))) ierr=3
+    if (.not. ROMP2_Is_Finite(E1)) ierr=3
   end if
   call mma_deallocate(M)
   call mma_deallocate(Cnew)
