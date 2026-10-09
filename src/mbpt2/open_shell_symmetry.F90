@@ -21,8 +21,7 @@ use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero, One, Three, Four, Five, Half
 use Symmetry_Info, only: Mul
 use Index_Functions, only: nTri_Elem
-use Para_Info, only: nProcs,MyRank
-use ROMP2_Parallel, only: ROMP2_Any,ROMP2_IsRoot,ROMP2_IsParallel,ROMP2_SyncError
+use Para_Info, only: nProcs,MyRank,Is_Real_Par
 use ROMP2_Semicanonical, only: ROMP2_Semi
 use stdalloc, only: mma_allocate,mma_deallocate,mma_maxDBLE
 implicit none
@@ -45,6 +44,7 @@ type(Pair_Block) :: blocks(8)
 contains
 
 subroutine Open_Shell_Symmetry_Driver(method,ireturn)
+integer(kind=iwp) :: MPIFlag
   character(len=*),intent(in) :: method
   integer(kind=iwp),intent(out) :: ireturn
   integer(kind=iwp) :: ierr,g,spin,s,n,first,last,rc
@@ -73,20 +73,34 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   restricted=(method=='CASSCF  ').or.(method=='RASSCF  ')
   workers=1
   rankid=0
-  if (ROMP2_IsParallel()) then
+  if (((nProcs>1).and.Is_Real_Par())) then
     workers=nProcs
     rankid=MyRank
   end if
   calculation: block
   call ReadReference(ierr)
-  call ROMP2_SyncError(ierr,message)
+  MPIFlag=0
+  if (ierr/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
+    if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(message)
+    ierr=1
+    message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+  end if
   if (ierr/=0) exit calculation
   ! RUNFILE records are logically global, but make rank zero authoritative
   ! for all real reference data used by distributed contractions.  This
   ! avoids rank-local RUNFILE state from changing the MPI result.
   call SynchronizeReference()
   call RdInp(OpenErr=ierr,OpenMessage=message,SymFrozen=frozen(1:ns),SymOcc=occ(1:ns,:))
-  call ROMP2_SyncError(ierr,message)
+  MPIFlag=0
+  if (ierr/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
+    if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(message)
+    ierr=1
+    message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+  end if
   if (ierr/=0) exit calculation
   ! Likewise use the root input parse as the single frozen-space definition.
   call SynchronizeFrozen()
@@ -105,7 +119,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
     ! Each irrep and spin is diagonalized independently. Occupied and
     ! virtual subspaces never mix, including in degenerate spectra.
     ierr=0
-    if (ROMP2_IsRoot()) then
+    if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
       do spin=1,2
         do s=1,ns
           n=bs(s)
@@ -129,10 +143,17 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
       end do
     end if
     message='Symmetry-block semicanonicalization or singles failed.'
-    call ROMP2_SyncError(ierr,message)
+    MPIFlag=0
+    if (ierr/=0) MPIFlag=1
+    if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+    if (MPIFlag/=0) then
+      if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(message)
+      ierr=1
+      message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+    end if
     if (ierr/=0) exit calculation
-    if (ROMP2_IsParallel()) then
-      if (.not.ROMP2_IsRoot()) then
+    if (((nProcs>1).and.Is_Real_Par())) then
+      if (.not.((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
         coeff(:,:,:)=Zero
         eps(:,:)=Zero
         singles(:)=Zero
@@ -152,7 +173,10 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   if (ierr/=0) exit calculation
   corr=sum(e)+sum(singles)
   total=eref+corr
-  if (ROMP2_Any(logical(.not.ieee_is_finite(total),kind=kind(.true.)))) then
+  MPIFlag=0
+  if (logical(.not.ieee_is_finite(total),kind=kind(.true.))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     message='Nonfinite symmetry MP2 total energy.'
     exit calculation
   end if
@@ -160,10 +184,17 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
     call Cho_X_Final(ierr)
     cho_open=.false.
     message='Symmetry Cholesky finalization failed.'
-    call ROMP2_SyncError(ierr,message)
+    MPIFlag=0
+    if (ierr/=0) MPIFlag=1
+    if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+    if (MPIFlag/=0) then
+      if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(message)
+      ierr=1
+      message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+    end if
     if (ierr/=0) exit calculation
   end if
-  if (ROMP2_IsRoot() .and. (iPL>=2)) then
+  if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0)) .and. (iPL>=2)) then
     call PrintResultsHeader()
 
     if (restricted) then
@@ -213,7 +244,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   ireturn=_RC_ALL_IS_WELL_
   end block calculation
   if (cho_open) call Cho_X_Final(rc)
-  if ((ireturn/=_RC_ALL_IS_WELL_).and.ROMP2_IsRoot()) write(u6,'(A)') ' Symmetry MP2 error: '//trim(message)
+  if ((ireturn/=_RC_ALL_IS_WELL_).and.((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) write(u6,'(A)') ' Symmetry MP2 error: '//trim(message)
   do g=1,8
     call mma_deallocate(blocks(g)%mu,safe='*')
     call mma_deallocate(blocks(g)%nu,safe='*')
@@ -253,13 +284,17 @@ subroutine PrintResultsHeader()
 end subroutine PrintResultsHeader
 
 logical function MemoryOK(elements)
+integer(kind=iwp) :: MPIFlag
   real(kind=wp),intent(in) :: elements
   integer(kind=iwp) :: available,element_limit
   call mma_maxDBLE(available)
   element_limit=huge(available)
   element_limit=element_limit/RtoB
-  MemoryOK=.not.ROMP2_Any((elements>0.65_wp*real(available,wp)).or. &
-                          (elements>real(element_limit,wp)))
+  MPIFlag=0
+  if ((elements>0.65_wp*real(available,wp)).or. &
+                          (elements>real(element_limit,wp))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  MemoryOK=.not.(MPIFlag/=0)
   if (.not.MemoryOK) message='Insufficient memory or integer range for in-core symmetry MP2.'
 end function MemoryOK
 
@@ -384,9 +419,9 @@ subroutine SynchronizeReference()
   ! Fock, transformation, or doubles work.  The C1 drivers are untouched:
   ! this routine is used only by the non-C1 symmetry path.
   real(kind=wp) :: scalar(1)
-  if (.not.ROMP2_IsParallel()) return
+  if (.not.((nProcs>1).and.Is_Real_Par())) return
   scalar=Zero
-  if (ROMP2_IsRoot()) then
+  if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
     scalar(1)=eref
   else
     coeff(:,:,:)=Zero
@@ -401,8 +436,8 @@ end subroutine SynchronizeReference
 subroutine SynchronizeFrozen()
   ! The shared open-shell input reader parses MBPT2 input on every rank: make
   ! rank zero's accepted counts authoritative for all subsequent maps.
-  if (.not.ROMP2_IsParallel()) return
-  if (.not.ROMP2_IsRoot()) frozen(1:ns)=0
+  if (.not.((nProcs>1).and.Is_Real_Par())) return
+  if (.not.((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) frozen(1:ns)=0
   call gaIgOP(frozen(1),ns,'+')
 end subroutine SynchronizeFrozen
 
@@ -479,6 +514,7 @@ end subroutine MakePairs
 
 subroutine ReadConventional(ierr)
   use TwoDat, only: AuxTwo
+integer(kind=iwp) :: MPIFlag
   integer(kind=iwp),intent(out) :: ierr
   integer(kind=iwp) :: rc,rc2,lu,fs,fb(8),skip(8),g,s,t,u,v,np,nq,p,opt,nmat,p0,q0
   logical(kind=iwp) :: square,exists
@@ -506,18 +542,27 @@ subroutine ReadConventional(ierr)
   rc=0
   call f_Inquire('ORDINT',exists)
   if ((.not.exists).or.AuxTwo%Opn) rc=1
-  if (ROMP2_Any(rc/=0)) exit read_integrals
+  MPIFlag=0
+  if (rc/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) exit read_integrals
 
   lu=43
   call OpnOrd(rc,0,'ORDINT',lu)
   if (rc==0) opened=.true.
-  if (ROMP2_Any(rc/=0)) exit read_integrals
+  MPIFlag=0
+  if (rc/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) exit read_integrals
 
   call GetOrd(rc,square,fs,fb,skip)
   if (rc==0) then
     if ((fs/=ns).or.any(fb(1:ns)/=bs(1:ns)).or.any(skip(1:ns)/=0)) rc=1
   end if
-  if (ROMP2_Any(rc/=0)) exit read_integrals
+  MPIFlag=0
+  if (rc/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) exit read_integrals
 
   do g=1,ns
     do s=1,ns
@@ -544,9 +589,12 @@ subroutine ReadConventional(ierr)
             if (nmat/=1) rc=1
             if (.not.all(ieee_is_finite(buffer(1:nq)))) rc=1
           end if
-          if (ROMP2_Any(rc/=0)) exit read_integrals
+          MPIFlag=0
+          if (rc/=0) MPIFlag=1
+          if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+          if (MPIFlag/=0) exit read_integrals
 
-          if (ROMP2_IsParallel()) call GADGOp(buffer(1),nq,'+')
+          if (((nProcs>1).and.Is_Real_Par())) call GADGOp(buffer(1),nq,'+')
 
           blocks(g)%metric(p0+p,q0+1:q0+nq)=buffer(1:nq)
           if (.not.square) blocks(g)%metric(q0+1:q0+nq,p0+p)=buffer(1:nq)
@@ -565,7 +613,14 @@ subroutine ReadConventional(ierr)
 
   call mma_deallocate(buffer)
   message='Symmetry ORDINT read failed or dimensions disagree with the reference.'
-  call ROMP2_SyncError(rc,message)
+  MPIFlag=0
+  if (rc/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
+    if (rc/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(message)
+    rc=1
+    message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+  end if
   if (rc/=0) return
 
   ierr=0
@@ -574,6 +629,7 @@ end subroutine ReadConventional
 subroutine ReadCholesky(ierr,initialized)
   use Cholesky, only: NumCho,nDimRS,ChoNSym=>nSym,ChoNBas=>nBas
   use Data_Structures, only: SBA_Type,Allocate_DT,Deallocate_DT
+integer(kind=iwp) :: MPIFlag
   integer(kind=iwp),intent(out) :: ierr
   logical,intent(out) :: initialized
   integer(kind=iwp) :: g,s,t,p,j,rc,nread,redset,skip(8),pos,mu,nu,iswap,total_count
@@ -584,7 +640,10 @@ subroutine ReadCholesky(ierr,initialized)
 #include "warnings.h"
   initialized=.false.
   call Cho_X_Init(rc,Zero)
-  if (ROMP2_Any(rc/=0)) then
+  MPIFlag=0
+  if (rc/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     ! Initialization can fail partially: do not finalize on a subset.
     call Quit(_RC_CHO_INI_)
     ierr=1
@@ -593,12 +652,18 @@ subroutine ReadCholesky(ierr,initialized)
   initialized=.true.
   ierr=1
   message='Cholesky symmetry dimensions do not match the reference.'
-  if (ROMP2_Any(ChoNSym/=ns)) return
-  if (ROMP2_Any(any(ChoNBas(1:ns)/=bs(1:ns)))) return
+  MPIFlag=0
+  if (ChoNSym/=ns) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
+  MPIFlag=0
+  if (any(ChoNBas(1:ns)/=bs(1:ns))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   call mma_allocate(counts,ns,workers,label='symmetry Cholesky ownership')
   counts=0
   counts(:,rankid+1)=NumCho(1:ns)
-  if (ROMP2_IsParallel()) call gaIgOP(counts(1,1),size(counts),'+')
+  if (((nProcs>1).and.Is_Real_Par())) call gaIgOP(counts(1,1),size(counts),'+')
   if (any(counts<0)) then
     call mma_deallocate(counts)
     return
@@ -623,7 +688,10 @@ subroutine ReadCholesky(ierr,initialized)
   call mma_deallocate(counts)
   message='No Cholesky vectors found in any symmetry sector.'
   if (sum(blocks(1:ns)%nglobal)<=0) return
-  if (ROMP2_Any(.not.allocated(nDimRS))) return
+  MPIFlag=0
+  if (.not.allocated(nDimRS)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   nread=max(1,maxval(nDimRS))
   if (.not.MemoryOK(needed+real(nread,wp)+real(nb,wp)**2)) return
   call mma_allocate(red,nread,label='symmetry reduced vector')
@@ -665,7 +733,14 @@ subroutine ReadCholesky(ierr,initialized)
     call Deallocate_DT(ao)
     message='Symmetry Cholesky vector read failed.'
     ! Rank-local vector loops have unequal lengths: synchronize afterwards.
-    call ROMP2_SyncError(rc,message)
+    MPIFlag=0
+    if (rc/=0) MPIFlag=1
+    if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+    if (MPIFlag/=0) then
+      if (rc/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(message)
+      rc=1
+      message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+    end if
     if (rc/=0) exit
   end do
   call mma_deallocate(red)
@@ -675,6 +750,7 @@ end subroutine ReadCholesky
 
 subroutine ReadOne(ierr)
   use OneDat, only: AuxOne,sNoNuc,sNoOri
+integer(kind=iwp) :: MPIFlag
   integer(kind=iwp),intent(out) :: ierr
   integer(kind=iwp) :: rc,rc2,opt,comp,sy,s,i,j,k,pass,np
   logical :: opened
@@ -686,7 +762,7 @@ subroutine ReadOne(ierr)
   overlap=Zero
   rc=0
   opened=.false.
-  if (ROMP2_IsRoot()) then
+  if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
     read_one_root: block
     if (.not.AuxOne%Opn) then
       call OpnOne(rc,0,'ONEINT',41)
@@ -729,10 +805,17 @@ subroutine ReadOne(ierr)
   end if
   call mma_deallocate(buffer)
   message='Symmetry ONEINT read failed.'
-  call ROMP2_SyncError(rc,message)
+  MPIFlag=0
+  if (rc/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
+    if (rc/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(message)
+    rc=1
+    message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+  end if
   ierr=rc
   if (rc/=0) return
-  if (ROMP2_IsParallel()) then
+  if (((nProcs>1).and.Is_Real_Par())) then
     call GADGOp(hcore(1,1),size(hcore),'+')
     call GADGOp(overlap(1,1),size(overlap),'+')
   end if
@@ -748,6 +831,7 @@ real(kind=wp) function AOIntegral(i,j,k,l) result(value)
 end function AOIntegral
 
 subroutine ReferenceFock(ierr)
+integer(kind=iwp) :: MPIFlag
   integer(kind=iwp),intent(out) :: ierr
   integer(kind=iwp) :: s,t,g,spin,n,m,first,last,other,i,j,k,l,p,v,mu,nu
   real(kind=wp),allocatable :: work(:,:),mat(:,:),vec(:,:),exchange(:,:)
@@ -786,9 +870,12 @@ subroutine ReferenceFock(ierr)
     end do
   end do
   message='Symmetry ROHF orbitals are not orthonormal.'
-  if (ROMP2_Any(logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.)))) exit build_fock
+  MPIFlag=0
+  if (logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) exit build_fock
   fock(:,:,:)=Zero
-  if (ROMP2_IsRoot()) then
+  if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
     fock(:,:,1)=hcore
     fock(:,:,2)=hcore
   end if
@@ -828,7 +915,7 @@ subroutine ReferenceFock(ierr)
     ! Fock deterministically on rank zero, exactly as in the serial path,
     ! then distribute it below.  MPI work-sharing remains in TransformPairs
     ! and Doubles, where it materially reduces the MP2 cost.
-    if (ROMP2_IsRoot()) then
+    if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
       do i=1,nb
         s=symorb(i)
         do j=off(s)+1,off(s)+bs(s)
@@ -844,14 +931,20 @@ subroutine ReferenceFock(ierr)
       end do
     end if
   end if
-  if (ROMP2_IsParallel()) call GADGOp(fock(1,1,1),size(fock),'+')
+  if (((nProcs>1).and.Is_Real_Par())) call GADGOp(fock(1,1,1),size(fock),'+')
   message='Nonfinite symmetry reference Fock matrix.'
-  if (ROMP2_Any(logical(.not.all(ieee_is_finite(fock)),kind=kind(.true.)))) exit build_fock
+  MPIFlag=0
+  if (logical(.not.all(ieee_is_finite(fock)),kind=kind(.true.))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) exit build_fock
   call Get_dScalar('PotNuc',enuc)
   check=enuc+Half*(sum(density(:,:,1)*(hcore+fock(:,:,1)))+sum(density(:,:,2)*(hcore+fock(:,:,2))))
   message='Reconstructed symmetry ROHF energy differs from RASSCF.'
-  if (ROMP2_Any(logical((.not.ieee_is_finite(check)).or.(abs(check-eref)>1.0e-7_wp), &
-                       kind=kind(.true.)))) exit build_fock
+  MPIFlag=0
+  if (logical((.not.ieee_is_finite(check)).or.(abs(check-eref)>1.0e-7_wp), &
+                       kind=kind(.true.))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) exit build_fock
   ! Stationarity test in the shared spatial ROHF basis, before rotation.
   grad=Zero
   vec=Zero
@@ -875,7 +968,10 @@ subroutine ReferenceFock(ierr)
   end do
   grad=maxval(abs(vec))
   message='ROHF symmetry stationarity check failed: tighten RASSCF convergence.'
-  if (ROMP2_Any(logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) exit build_fock
+  MPIFlag=0
+  if (logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) exit build_fock
   ierr=0
   end block build_fock
   call mma_deallocate(work)
@@ -926,7 +1022,7 @@ subroutine TransformPairs(ierr)
         call DGEMM_('T','N',nq,nlocal,np,One,projection,np,blocks(g)%vectors,np, &
                     Zero,blocks(g)%projected(1,start),nq)
       end if
-      if (ROMP2_IsParallel().and.(nq*nglobal>0)) then
+      if (((nProcs>1).and.Is_Real_Par()).and.(nq*nglobal>0)) then
         call GADGOp(blocks(g)%projected(1,1),size(blocks(g)%projected),'+')
       end if
       call mma_deallocate(blocks(g)%vectors)
@@ -941,7 +1037,7 @@ subroutine TransformPairs(ierr)
           call DGEMM_('T','N',nq,1,np,One,projection,np,work,np,Zero,blocks(g)%kernel(1,q),nq)
         end do
       end if
-      if (ROMP2_IsParallel().and.(nq>0)) call GADGOp(blocks(g)%kernel(1,1),size(blocks(g)%kernel),'+')
+      if (((nProcs>1).and.Is_Real_Par()).and.(nq>0)) call GADGOp(blocks(g)%kernel(1,1),size(blocks(g)%kernel),'+')
       call mma_deallocate(work)
       call mma_deallocate(blocks(g)%metric)
     end if
@@ -980,6 +1076,7 @@ real(kind=wp) function MOIntegral(i,a,spin,j,b,other) result(value)
 end function MOIntegral
 
 subroutine Doubles(energy,ierr)
+integer(kind=iwp) :: MPIFlag
   real(kind=wp),intent(out) :: energy(3)
   integer(kind=iwp),intent(out) :: ierr
   integer(kind=iwp) :: spin,other,i,j,a,b,component,paircount
@@ -1024,8 +1121,15 @@ subroutine Doubles(energy,ierr)
   end do
   if (.not.all(ieee_is_finite(energy))) ierr=1
   message='Invalid denominator or nonfinite symmetry doubles energy.'
-  call ROMP2_SyncError(ierr,message)
+  MPIFlag=0
+  if (ierr/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
+    if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(message)
+    ierr=1
+    message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+  end if
   if (ierr/=0) return
-  if (ROMP2_IsParallel()) call GADGOp(energy(1),3,'+')
+  if (((nProcs>1).and.Is_Real_Par())) call GADGOp(energy(1),3,'+')
 end subroutine Doubles
 end module Open_Shell_Symmetry

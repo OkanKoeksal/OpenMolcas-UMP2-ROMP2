@@ -17,8 +17,7 @@ module ROMP2_Cholesky
 use Definitions, only: wp,iwp,u6,RtoB
 use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero, One, Two, Three
-use Para_Info, only: nProcs,MyRank
-use ROMP2_Parallel
+use Para_Info, only: nProcs,MyRank,Is_Real_Par
 use Data_Structures, only: SBA_Type,Allocate_DT,Deallocate_DT
 use Cholesky, only: NumCho,nDimRS,ChoNSym=>nSym,ChoNBas=>nBas
 use UMP2_Global, only: nBas,nOA,nOB,nVA,nVB,EOccA,EOccB,EVirA,EVirB,DenTol,EAA,EBB,EAB,iPL
@@ -36,6 +35,7 @@ type(SBA_Type),target,save :: AO
 contains
 
 subroutine ROMP2_Cho_Open(ierr,Message)
+integer(kind=iwp) :: MPIFlag
   integer(kind=iwp),intent(out) :: ierr
   character(len=*),intent(out) :: Message
   integer(kind=iwp) :: Dims(1),Available,nWorkers,iWorker,element_limit
@@ -44,12 +44,18 @@ subroutine ROMP2_Cho_Open(ierr,Message)
 #include "warnings.h"
   ierr=1
   Message='ROMP2 Cholesky initialization failed.'
-  if (ROMP2_Any(ChoReady.or.HaveAO)) then
+  MPIFlag=0
+  if (ChoReady.or.HaveAO) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='ROMP2 Cholesky interface is already initialized.'
     return
   end if
   call Cho_X_Init(ierr,Zero)
-  if (ROMP2_Any(ierr/=0)) then
+  MPIFlag=0
+  if (ierr/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     ! A partial initialization must not finalize on only a subset of ranks.
     Message='ROMP2 Cho_X_Init failed on at least one rank.'
     call Quit(_RC_CHO_INI_)
@@ -57,20 +63,26 @@ subroutine ROMP2_Cho_Open(ierr,Message)
   end if
   ChoReady=.true.
   ierr=1
-  if (ROMP2_Any((ChoNSym/=1).or.(ChoNBas(1)/=nBas))) then
+  MPIFlag=0
+  if ((ChoNSym/=1).or.(ChoNBas(1)/=nBas)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='Cholesky and ROHF reference dimensions disagree.'
     return
   end if
   nVec=NumCho(1) ! LOCAL count, possibly zero.
-  if (ROMP2_Any(nVec<0)) then
+  MPIFlag=0
+  if (nVec<0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='Invalid local Cholesky count.'
     return
   end if
   nWorkers=1
-  if (ROMP2_IsParallel()) nWorkers=nProcs
+  if (((nProcs>1).and.Is_Real_Par())) nWorkers=nProcs
   call mma_allocate(Counts,nWorkers,label='ROMP2 vector counts')
   Counts(:)=0
-  if (ROMP2_IsParallel()) then
+  if (((nProcs>1).and.Is_Real_Par())) then
     Counts(MyRank+1)=nVec
     call gaIgOP(Counts(1),nWorkers,'+')
   else
@@ -86,22 +98,31 @@ subroutine ROMP2_Cho_Open(ierr,Message)
     nGlobal=nGlobal+Counts(iWorker)
   end do
   Offset=0
-  if (ROMP2_IsParallel().and.(MyRank>0)) Offset=sum(Counts(1:MyRank))
+  if (((nProcs>1).and.Is_Real_Par()).and.(MyRank>0)) Offset=sum(Counts(1:MyRank))
   call mma_deallocate(Counts)
   if (nGlobal<=0) then
     Message='The global Cholesky vector count is zero.'
     return
   end if
-  if (ROMP2_Any(.not.allocated(nDimRS))) then
+  MPIFlag=0
+  if (.not.allocated(nDimRS)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='Missing Cholesky reduced-set dimensions.'
     return
   end if
-  if (ROMP2_Any((size(nDimRS,1)<1).or.(size(nDimRS,2)<1))) then
+  MPIFlag=0
+  if ((size(nDimRS,1)<1).or.(size(nDimRS,2)<1)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='Invalid Cholesky reduced-set dimensions.'
     return
   end if
   nRead=maxval(nDimRS(1,:))
-  if (ROMP2_Any((nVec>0).and.(nRead<=0))) then
+  MPIFlag=0
+  if ((nVec>0).and.(nRead<=0)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='Empty reduced sets on a vector-owning rank.'
     return
   end if
@@ -110,8 +131,11 @@ subroutine ROMP2_Cho_Open(ierr,Message)
   call mma_maxDBLE(Available)
   element_limit=huge(Available)
   element_limit=element_limit/RtoB
-  if (ROMP2_Any((Required>0.75_wp*real(Available,wp)).or. &
-      (Required>real(element_limit,wp)))) then
+  MPIFlag=0
+  if ((Required>0.75_wp*real(Available,wp)).or. &
+      (Required>real(element_limit,wp))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='Insufficient memory or integer range for ROMP2 AO Cholesky reader.'
     return
   end if
@@ -123,7 +147,7 @@ subroutine ROMP2_Cho_Open(ierr,Message)
   Skip=0
   Skip(1)=1
   iRedC=-1
-  if (ROMP2_IsRoot() .and. (iPL >= 3)) &
+  if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0)) .and. (iPL >= 3)) &
     write(u6,'(6X,A,I10)') 'Cholesky vectors (global)              = ',nGlobal
   ierr=0
   Message=''
@@ -154,6 +178,7 @@ subroutine ReadVector(iVec,ierr,Message)
 end subroutine ReadVector
 
 subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
+integer(kind=iwp) :: MPIFlag
   ! FA/FB enter as H. Both densities include ALL occupied orbitals,
   ! including the core: freezing changes correlation, not the reference.
   ! J_P = L_P * sum_uv [(DA+DB)_uv L_P,uv]
@@ -167,16 +192,22 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
   integer(kind=iwp) :: iVec,Available
   ierr=1
   Message='ROMP2 Cholesky interface is not initialized for Fock construction.'
-  if (ROMP2_Any((.not.ChoReady).or.(.not.HaveAO))) return
+  MPIFlag=0
+  if ((.not.ChoReady).or.(.not.HaveAO)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   call mma_maxDBLE(Available)
-  if (ROMP2_Any(Two*real(nBas,wp)**2>0.75_wp*real(Available,wp))) then
+  MPIFlag=0
+  if (Two*real(nBas,wp)**2>0.75_wp*real(Available,wp)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='Insufficient memory for ROMP2 Cholesky Fock work arrays.'
     return
   end if
   call mma_allocate(Work,nBas,nBas,label='ROMP2 Cholesky density work')
   call mma_allocate(Exchange,nBas,nBas,label='ROMP2 Cholesky exchange')
   ! H is present only on root, so the reduction includes it exactly once.
-  if (.not.ROMP2_IsRoot()) then
+  if (.not.((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
     FA(:,:)=Zero
     FB(:,:)=Zero
   end if
@@ -198,15 +229,25 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
   call mma_deallocate(Work)
   call mma_deallocate(Exchange)
   ! Local vector loops have unequal lengths: synchronize only after the loop.
-  call ROMP2_SyncError(ierr,Message)
+  MPIFlag=0
+  if (ierr/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
+    if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(Message)
+    ierr=1
+    Message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+  end if
   if (ierr/=0) return
-  if (ROMP2_IsParallel()) then
+  if (((nProcs>1).and.Is_Real_Par())) then
     call GADGOp(FA(1,1),size(FA),'+')
     call GADGOp(FB(1,1),size(FB),'+')
   end if
-  if (ROMP2_Any(logical( &
+  MPIFlag=0
+  if (logical( &
       (.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB))), &
-      kind=kind(.true.)))) then
+      kind=kind(.true.))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     ierr=1
     Message='Nonfinite ROMP2 Cholesky Fock matrix.'
     return
@@ -215,6 +256,7 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
 end subroutine ROMP2_Cho_Fock
 
 subroutine ROMP2_Cho_Energy(ierr,Message)
+integer(kind=iwp) :: MPIFlag
   ! CAlpha/CBeta have ALREADY been independently semicanonicalized.
   ! The shared UMP2 transformation excludes nFro occupied orbitals.
   integer(kind=iwp),intent(out) :: ierr
@@ -224,18 +266,27 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
   real(kind=wp),allocatable :: La(:,:,:),Lb(:,:,:)
   ierr=1
   Message='ROMP2 Cholesky interface is not initialized for doubles.'
-  if (ROMP2_Any((.not.ChoReady).or.(.not.HaveAO))) return
+  MPIFlag=0
+  if ((.not.ChoReady).or.(.not.HaveAO)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   NAElements=real(nVA,wp)*real(nOA,wp)*real(nGlobal,wp)
   NBElements=real(nVB,wp)*real(nOB,wp)*real(nGlobal,wp)
   element_limit=huge(Available)
   element_limit=element_limit/RtoB
-  if (ROMP2_Any(max(NAElements,NBElements)>real(element_limit,wp))) then
+  MPIFlag=0
+  if (max(NAElements,NBElements)>real(element_limit,wp)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='ROMP2 transformed vectors exceed supported integer indexing range.'
     return
   end if
   Required=NAElements+NBElements+Three*real(nBas,wp)*real(max(1,nOA,nOB),wp)
   call mma_maxDBLE(Available)
-  if (ROMP2_Any(Required>0.75_wp*real(Available,wp))) then
+  MPIFlag=0
+  if (Required>0.75_wp*real(Available,wp)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='Insufficient memory for in-core ROMP2 occupied-virtual Cholesky vectors.'
     return
   end if
@@ -253,15 +304,25 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
                                La(:,:,GlobalVec:GlobalVec),Lb(:,:,GlobalVec:GlobalVec),ierr,Message)
     if (ierr/=0) exit
   end do
-  call ROMP2_SyncError(ierr,Message)
+  MPIFlag=0
+  if (ierr/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
+    if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(Message)
+    ierr=1
+    Message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+  end if
   if (ierr==0) then
-    if (ROMP2_IsParallel()) then
+    if (((nProcs>1).and.Is_Real_Par())) then
       if (size(La)>0) call GADGOp(La(1,1,1),size(La),'+')
       if (size(Lb)>0) call GADGOp(Lb(1,1,1),size(Lb),'+')
     end if
-    if (ROMP2_Any(logical( &
+    MPIFlag=0
+    if (logical( &
         (.not.all(ieee_is_finite(La))).or.(.not.all(ieee_is_finite(Lb))), &
-        kind=kind(.true.)))) then
+        kind=kind(.true.))) MPIFlag=1
+    if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+    if (MPIFlag/=0) then
       ierr=1
       Message='Nonfinite assembled Cholesky vectors.'
     else

@@ -16,8 +16,7 @@ use Definitions, only: wp, iwp, u6
 use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero, One, Half
 use UMP2_Global
-use ROMP2_Parallel
-use Para_Info, only: nProcs,MyRank
+use Para_Info, only: nProcs,MyRank,Is_Real_Par
 use ROMP2_Cholesky, only: ROMP2_Cho_Fock
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
 implicit none
@@ -26,6 +25,7 @@ public :: ROMP2_Read, ROMP2_Fock
 contains
 
 subroutine ROMP2_Read(ierr,Message)
+integer(kind=iwp) :: MPIFlag
   integer(kind=iwp), intent(out) :: ierr
   character(len=*), intent(out) :: Message
   integer(kind=iwp) :: nd(1),ns(1),nf(1),nv(1),nb(1),mult,nel,l
@@ -34,15 +34,24 @@ subroutine ROMP2_Read(ierr,Message)
   ierr=1
   Message='ROMP2 requires C1 high-spin determinant RASSCF with conventional or Cholesky integrals.'
   call Get_cArray('Relax Method',method,8)
-  if (ROMP2_Any((method/='CASSCF  ').and.(method/='RASSCF  '))) return
+  MPIFlag=0
+  if ((method/='CASSCF  ').and.(method/='RASSCF  ')) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   call DecideOnCholesky(DoCholesky)
   call DecideOnDF(df)
-  if (ROMP2_Any(df)) then
+  MPIFlag=0
+  if (df) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='ROMP2 RI/DF integrals are unsupported: use Cholesky or conventional integrals.'
     return
   end if
   call Get_iScalar('nSym',nSym)
-  if (ROMP2_Any(nSym/=1)) return
+  MPIFlag=0
+  if (nSym/=1) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   call Get_iArray('nBas',nb,1)
   call Get_iArray('nIsh',nd,1)
   call Get_iArray('nAsh',ns,1)
@@ -52,17 +61,35 @@ subroutine ROMP2_Read(ierr,Message)
   call Get_iScalar('nActel',nel)
   ! CAS(nOpen,nOpen), maximum spin: exactly one determinant.
   ! Frozen/deleted RASSCF orbitals are excluded from the determinant reference.
-  if (ROMP2_Any((nf(1)/=0).or.(nv(1)/=0))) return
-  if (ROMP2_Any((ns(1)<0).or.(nd(1)<0).or.(nel/=ns(1)).or.(mult/=ns(1)+1))) return
+  MPIFlag=0
+  if ((nf(1)/=0).or.(nv(1)/=0)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
+  MPIFlag=0
+  if ((ns(1)<0).or.(nd(1)<0).or.(nel/=ns(1)).or.(mult/=ns(1)+1)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   nBas=nb(1)
   nOrb=nBas
   nOccA=nd(1)+ns(1)
   nOccB=nd(1)
-  if (ROMP2_Any((nBas<1).or.(nOccA>nBas))) return
-  if (ROMP2_Any(nBas>huge(l)/nBas)) return
+  MPIFlag=0
+  if ((nBas<1).or.(nOccA>nBas)) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
+  MPIFlag=0
+  if (nBas>huge(l)/nBas) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   call qpg_dArray('RASSCF orbitals',found,l)
-  if (ROMP2_Any(.not.found)) return
-  if (ROMP2_Any(l/=nBas*nBas)) return
+  MPIFlag=0
+  if (.not.found) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
+  MPIFlag=0
+  if (l/=nBas*nBas) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   call mma_allocate(CAlpha,nBas,nOrb,label='ROMP2 alpha orbitals')
   call mma_allocate(CBeta,nBas,nOrb,label='ROMP2 beta orbitals')
   call mma_allocate(EOrbA,nOrb,label='ROMP2 alpha energies')
@@ -70,9 +97,12 @@ subroutine ROMP2_Read(ierr,Message)
   call Get_dArray('RASSCF orbitals',CAlpha,nBas*nBas)
   CBeta(:,:)=CAlpha(:,:)
   call Get_dScalar('Last energy',ESCF)
-  if (ROMP2_Any(logical( &
+  MPIFlag=0
+  if (logical( &
       (.not.all(ieee_is_finite(CAlpha))).or.(.not.ieee_is_finite(ESCF)), &
-      kind=kind(.true.)))) return
+      kind=kind(.true.))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   ReferenceMethod='ROHF    '
   ierr=0
   Message=''
@@ -81,6 +111,7 @@ end subroutine ROMP2_Read
 subroutine ROMP2_Fock(FA,FB,ierr,Message)
   use OneDat, only: AuxOne,sNoNuc,sNoOri
   use TwoDat, only: AuxTwo
+integer(kind=iwp) :: MPIFlag
   real(kind=wp), intent(out) :: FA(nBas,nBas),FB(nBas,nBas)
   integer(kind=iwp), intent(out) :: ierr
   character(len=*), intent(out) :: Message
@@ -99,18 +130,27 @@ subroutine ROMP2_Fock(FA,FB,ierr,Message)
   call mma_maxDBLE(avail)
   integer_limit=huge(avail)
   integer_limit=ishft(integer_limit,-1)
-  if (ROMP2_Any((required>0.8_wp*real(avail,wp)).or.(required>real(integer_limit,wp)))) then
+  MPIFlag=0
+  if ((required>0.8_wp*real(avail,wp)).or.(required>real(integer_limit,wp))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='Insufficient memory for ROMP2 reference Fock construction.'
     return
   end if
   np=nBas*(nBas+1)/2
   if (.not.DoCholesky) then
     call f_Inquire('ORDINT',exists)
-    if (ROMP2_Any(.not.exists)) then
+    MPIFlag=0
+    if (.not.exists) MPIFlag=1
+    if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+    if (MPIFlag/=0) then
       Message='Conventional ROMP2 requires stored ORDINT: use SEWARD NoCholesky.'
       return
     end if
-    if (ROMP2_Any(AuxTwo%Opn)) return
+    MPIFlag=0
+    if (AuxTwo%Opn) MPIFlag=1
+    if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+    if (MPIFlag/=0) return
     call mma_allocate(ERI,nBas,nBas,nBas,nBas,label='ROMP2 AO ERI')
   end if
   call mma_allocate(Buf,np+4,label='ROMP2 integral buffer')
@@ -159,14 +199,18 @@ contains
   end subroutine ReadOneMatrices
 
   subroutine BuildFockMatrices()
+  integer(kind=iwp) :: MPIFlag
   ! ONEINT and ORDINT I/O are local in the Molcas reader layer.
   ! Root is the sole file reader: distribute complete data explicitly.
   H(:,:)=Zero
   S(:,:)=Zero
   rc=0
-  if (ROMP2_IsRoot()) call ReadOneMatrices()
-  if (ROMP2_Any(rc/=0)) return
-  if (ROMP2_IsParallel()) then
+  if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) call ReadOneMatrices()
+  MPIFlag=0
+  if (rc/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
+  if (((nProcs>1).and.Is_Real_Par())) then
     call GADGOp(H(1,1),size(H),'+')
     call GADGOp(S(1,1),size(S),'+')
   end if
@@ -175,9 +219,12 @@ contains
   do i=1,nBas
     MA(i,i)=MA(i,i)-One
   end do
-  if (ROMP2_Any(logical( &
+  MPIFlag=0
+  if (logical( &
       (.not.all(ieee_is_finite(MA))).or.(maxval(abs(MA))>1.0e-7_wp), &
-      kind=kind(.true.)))) then
+      kind=kind(.true.))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
     Message='ROHF orbitals are not orthonormal in the ONEINT overlap metric.'
     return
   end if
@@ -195,7 +242,10 @@ contains
         if ((fs/=1).or.(fbasis(1)/=nBas).or.(skip(1)/=0)) rc=1
       end if
     end if
-    if (ROMP2_Any(rc/=0)) return
+    MPIFlag=0
+    if (rc/=0) MPIFlag=1
+    if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+    if (MPIFlag/=0) return
     opt=1
     do i=1,nBas
       do j=1,i
@@ -207,8 +257,11 @@ contains
           if (nmat/=1) rc=1
           if (.not.all(ieee_is_finite(Buf(1:np)))) rc=1
         end if
-        if (ROMP2_Any(rc/=0)) return
-        if (ROMP2_IsParallel()) call GADGOp(Buf(1),np,'+')
+        MPIFlag=0
+        if (rc/=0) MPIFlag=1
+        if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+        if (MPIFlag/=0) return
+        if (((nProcs>1).and.Is_Real_Par())) call GADGOp(Buf(1),np,'+')
         q=0
         do k=1,nBas
           do l=1,k
@@ -226,7 +279,10 @@ contains
       call ClsOrd(rc)
       opened=.false.
     end if
-    if (ROMP2_Any(rc/=0)) return
+    MPIFlag=0
+    if (rc/=0) MPIFlag=1
+    if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+    if (MPIFlag/=0) return
   end if
   call DGEMM_('N','T',nBas,nBas,nOccA,One,CAlpha,nBas,CAlpha,nBas,Zero,DA,nBas)
   call DGEMM_('N','T',nBas,nBas,nOccB,One,CBeta,nBas,CBeta,nBas,Zero,DB,nBas)
@@ -234,16 +290,19 @@ contains
   FB(:,:)=H
   if (DoCholesky) then
     call ROMP2_Cho_Fock(DA,DB,FA,FB,rc,Message)
-    if (ROMP2_Any(rc/=0)) return
+    MPIFlag=0
+    if (rc/=0) MPIFlag=1
+    if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+    if (MPIFlag/=0) return
   else
     ! Include H once, then distribute matrix-element contractions.
-    if (.not.ROMP2_IsRoot()) then
+    if (.not.((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
       FA(:,:)=Zero
       FB(:,:)=Zero
     end if
     do j=1,nBas
       do i=1,nBas
-        if (ROMP2_IsParallel()) then
+        if (((nProcs>1).and.Is_Real_Par())) then
           if (mod((j-1)*nBas+i-1,nProcs)/=MyRank) cycle
         end if
         do l=1,nBas
@@ -254,20 +313,26 @@ contains
         end do
       end do
     end do
-    if (ROMP2_IsParallel()) then
+    if (((nProcs>1).and.Is_Real_Par())) then
       call GADGOp(FA(1,1),size(FA),'+')
       call GADGOp(FB(1,1),size(FB),'+')
     end if
   end if
-  if (ROMP2_Any(logical( &
+  MPIFlag=0
+  if (logical( &
       (.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB))), &
-      kind=kind(.true.)))) return
+      kind=kind(.true.))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) return
   call Get_dScalar('PotNuc',enuc)
   echeck=enuc+Half*(sum(DA*(H+FA))+sum(DB*(H+FB)))
-  if (ROMP2_Any(logical( &
+  MPIFlag=0
+  if (logical( &
       (.not.ieee_is_finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp), &
-      kind=kind(.true.)))) then
-    if (ROMP2_IsRoot()) then
+      kind=kind(.true.))) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
+    if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
       write(u6,'(6X,A,T48,F20.10,A)') 'Stored ROHF reference energy',ESCF,' a.u.'
       write(u6,'(6X,A,T48,F20.10,A)') 'Reconstructed ROHF energy',echeck,' a.u.'
     end if
@@ -292,8 +357,11 @@ contains
       grad=max(grad,abs((oa-pa)*MA(i,j)+(ob-pb)*MB(i,j)))
     end do
   end do
-  if (ROMP2_Any(grad>1.0e-5_wp)) then
-    if (ROMP2_IsRoot()) &
+  MPIFlag=0
+  if (grad>1.0e-5_wp) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
+    if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) &
       write(u6,'(6X,A,T48,ES14.6)') 'ROHF stationarity residual',grad
     Message='ROHF orbital stationarity check failed: tighten RASSCF convergence.'
     return

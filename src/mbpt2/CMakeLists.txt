@@ -51,7 +51,6 @@ set (sources
      ump2_cholesky_transform.F90
      ump2_energy.F90
      ump2_conventional.F90
-     romp2_parallel.F90
      romp2_conventional.F90
      romp2_cholesky.F90
      romp2_reference.F90

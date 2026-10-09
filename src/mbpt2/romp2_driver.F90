@@ -16,8 +16,7 @@ use Definitions, only: wp,iwp,u6
 use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero
 use UMP2_Global
-use ROMP2_Parallel
-use Para_Info, only: MyRank
+use Para_Info, only: MyRank,Is_Real_Par,nProcs
 use ROMP2_Reference, only: ROMP2_Read,ROMP2_Fock
 use ROMP2_Cholesky, only: ROMP2_Cho_Open,ROMP2_Cho_Close,ROMP2_Cho_Energy
 use ROMP2_Semicanonical, only: ROMP2_Semi
@@ -48,9 +47,9 @@ ireturn=_RC_INPUT_ERROR_
 call UMP2_Clean()
 call RunCalculation()
 call ROMP2_Cho_Close(cleanupRC)
-if ((cleanupRC/=0) .and. ROMP2_IsRoot()) &
+if ((cleanupRC/=0) .and. ((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) &
   write(u6,'(A,I8)') ' ROMP2 Cholesky cleanup return code: ',cleanupRC
-if ((ireturn/=_RC_ALL_IS_WELL_).and.ROMP2_IsRoot()) write(u6,'(A)') ' ROMP2 error: '//trim(Message)
+if ((ireturn/=_RC_ALL_IS_WELL_).and.((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) write(u6,'(A)') ' ROMP2 error: '//trim(Message)
 call mma_deallocate(FA,safe='*')
 call mma_deallocate(FB,safe='*')
 call UMP2_Clean()
@@ -58,31 +57,63 @@ call UMP2_Clean()
 contains
 
 subroutine RunCalculation()
+integer(kind=iwp) :: MPIFlag
 call ROMP2_Read(ierr,Message)
-call ROMP2_SyncError(ierr,Message)
+MPIFlag=0
+if (ierr/=0) MPIFlag=1
+if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+if (MPIFlag/=0) then
+  if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(Message)
+  ierr=1
+  Message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+end if
 if (ierr/=0) return
 call RdInp(OpenErr=ierr,OpenMessage=Message)
-call ROMP2_SyncError(ierr,Message)
+MPIFlag=0
+if (ierr/=0) MPIFlag=1
+if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+if (MPIFlag/=0) then
+  if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(Message)
+  ierr=1
+  Message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+end if
 if (ierr/=0) return
-if (ROMP2_Any((nFro<0).or.(nFro>min(nOccA,nOccB)))) then
+MPIFlag=0
+if ((nFro<0).or.(nFro>min(nOccA,nOccB))) MPIFlag=1
+if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+if (MPIFlag/=0) then
   Message='ROMP2 Frozen must be between zero and the number of doubly occupied reference orbitals.'
   return
 end if
 if (DoCholesky) then
   call ROMP2_Cho_Open(ierr,Message)
-  call ROMP2_SyncError(ierr,Message)
+  MPIFlag=0
+  if (ierr/=0) MPIFlag=1
+  if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+  if (MPIFlag/=0) then
+    if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(Message)
+    ierr=1
+    Message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+  end if
   if (ierr/=0) return
 end if
 call mma_allocate(FA,nBas,nBas,label='ROMP2 Fock alpha')
 call mma_allocate(FB,nBas,nBas,label='ROMP2 Fock beta')
 call ROMP2_Fock(FA,FB,ierr,Message)
-call ROMP2_SyncError(ierr,Message)
+MPIFlag=0
+if (ierr/=0) MPIFlag=1
+if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+if (MPIFlag/=0) then
+  if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(Message)
+  ierr=1
+  Message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+end if
 if (ierr/=0) return
 ! Root diagonalizes once: every rank must use the same orbital gauge.
 ierr=0
 E1A=Zero
 E1B=Zero
-if (ROMP2_IsRoot()) then
+if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
   call ROMP2_Semi(CAlpha,FA,nBas,nOccA,nFro,EOrbA,E1A,ierr)
   if (ierr/=0) then
     Message='ROMP2 alpha semicanonicalization or singles evaluation failed.'
@@ -91,9 +122,16 @@ if (ROMP2_IsRoot()) then
     if (ierr/=0) Message='ROMP2 beta semicanonicalization or singles evaluation failed.'
   end if
 end if
-call ROMP2_SyncError(ierr,Message)
+MPIFlag=0
+if (ierr/=0) MPIFlag=1
+if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+if (MPIFlag/=0) then
+  if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(Message)
+  ierr=1
+  Message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+end if
 if (ierr/=0) return
-if (ROMP2_IsParallel()) then
+if (((nProcs>1).and.Is_Real_Par())) then
   if (MyRank/=0) then
     CAlpha=Zero
     CBeta=Zero
@@ -112,32 +150,56 @@ end if
 call mma_deallocate(FA)
 call mma_deallocate(FB)
 call UMP2_Setup_Spaces(ierr,Message)
-call ROMP2_SyncError(ierr,Message)
+MPIFlag=0
+if (ierr/=0) MPIFlag=1
+if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+if (MPIFlag/=0) then
+  if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(Message)
+  ierr=1
+  Message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+end if
 if (ierr/=0) return
 if (DoCholesky) then
   call ROMP2_Cho_Energy(ierr,Message)
 else
   call ROMP2_Conventional_Energy(ierr,Message)
 end if
-call ROMP2_SyncError(ierr,Message)
+MPIFlag=0
+if (ierr/=0) MPIFlag=1
+if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+if (MPIFlag/=0) then
+  if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(Message)
+  ierr=1
+  Message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+end if
 if (ierr/=0) return
 ECorr=E1A+E1B+EAA+EBB+EAB
 ETotal=ESCF+ECorr
 ! Assignment converts the intrinsic result to the default logical kind
-! expected by ROMP2_Any, including builds with promoted default kinds.
+! expected by MBPT2_Any, including builds with promoted default kinds.
 NonfiniteTotal=.not.ieee_is_finite(ETotal)
-if (ROMP2_Any(NonfiniteTotal)) then
+MPIFlag=0
+if (NonfiniteTotal) MPIFlag=1
+if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+if (MPIFlag/=0) then
   Message='Nonfinite ROMP2 total energy.'
   return
 end if
 ! Finalize before publishing any energy as successful.
 call ROMP2_Cho_Close(ierr)
-call ROMP2_SyncError(ierr,Message)
+MPIFlag=0
+if (ierr/=0) MPIFlag=1
+if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
+if (MPIFlag/=0) then
+  if (ierr/=0) write(u6,'(A,I6,2A)') ' MBPT2 rank ',MyRank,': ',trim(Message)
+  ierr=1
+  Message='MBPT2 failed on at least one rank: see preceding diagnostics.'
+end if
 if (ierr/=0) then
   Message='ROMP2 Cholesky finalization failed.'
   return
 end if
-if (ROMP2_IsRoot() .and. (iPL >= 2)) then
+if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0)) .and. (iPL >= 2)) then
   call PrintResultsHeader()
 
   write(u6,'(6X,A,T48,A)') 'Method', '= Semicanonical ROHF-MBPT(2)'
