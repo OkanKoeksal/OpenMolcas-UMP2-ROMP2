@@ -14,7 +14,7 @@
 module Open_Shell_Symmetry
 ! Abelian symmetry energy path. C1 continues to use the existing drivers.
 ! AO pair metrics and occupied-virtual pairs are grouped by product irrep.
-! Conventional metrics and transformed vectors are replicated; computation
+! Conventional metrics and transformed vectors are replicated: computation
 ! is distributed. This is an in-core implementation, with memory checks.
 use Definitions, only: wp,iwp,u6,RtoB
 use Constants, only: Zero, One, Three, Four, Five, Half
@@ -97,7 +97,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
     call ReadConventional(ierr)
   end if
   if (ierr/=0) exit calculation
-  singles=Zero
+  singles(:)=Zero
   if (restricted) then
     call ReferenceFock(ierr)
     if (ierr/=0) exit calculation
@@ -132,9 +132,9 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
     if (ierr/=0) exit calculation
     if (ROMP2_IsParallel()) then
       if (.not.ROMP2_IsRoot()) then
-        coeff=Zero
-        eps=Zero
-        singles=Zero
+        coeff(:,:,:)=Zero
+        eps(:,:)=Zero
+        singles(:)=Zero
       end if
       call GADGOp(coeff(1,1,1),size(coeff),'+')
       call GADGOp(eps(1,1),size(eps),'+')
@@ -273,7 +273,7 @@ subroutine ReadCounts(label,values,ierr)
   integer(kind=iwp) :: n
   logical(kind=iwp) :: found
   ierr=1
-  values=0
+  values(:)=0
   call Qpg_iArray(label,found,n)
   if (.not.found) return
   if ((n<ns).or.(n>8)) return
@@ -342,8 +342,8 @@ subroutine ReadReference(ierr)
   call mma_allocate(coeff,nb,nb,2,label='symmetry MO coefficients')
   call mma_allocate(eps,nb,2,label='symmetry MO energies')
   call mma_allocate(symorb,nb,label='orbital irreps')
-  coeff=Zero
-  eps=Zero
+  coeff(:,:,:)=Zero
+  eps(:,:)=Zero
   do s=1,ns
     symorb(off(s)+1:off(s)+bs(s))=s
   end do
@@ -393,8 +393,8 @@ subroutine SynchronizeReference()
   if (ROMP2_IsRoot()) then
     scalar(1)=eref
   else
-    coeff=Zero
-    eps=Zero
+    coeff(:,:,:)=Zero
+    eps(:,:)=Zero
   end if
   call GADGOp(coeff(1,1,1),size(coeff),'+')
   call GADGOp(eps(1,1),size(eps),'+')
@@ -418,8 +418,8 @@ subroutine MakePairs(ierr)
   if (.not.MemoryOK(Five*real(nb,wp)**2)) return
   call mma_allocate(pairindex,nb,nb,label='AO pair map')
   call mma_allocate(qindex,nb,nb,2,label='OV pair map')
-  pairindex=0
-  qindex=0
+  pairindex(:,:)=0
+  qindex(:,:,:)=0
   do g=1,ns
     p=0
     do s=1,ns
@@ -631,7 +631,7 @@ subroutine ReadCholesky(ierr,initialized)
   nread=max(1,maxval(nDimRS))
   if (.not.MemoryOK(needed+real(nread,wp)+real(nb,wp)**2)) return
   call mma_allocate(red,nread,label='symmetry reduced vector')
-  skip=1
+  skip(:)=1
   do g=1,ns
     call mma_allocate(blocks(g)%vectors,blocks(g)%np,blocks(g)%nlocal,label='local symmetry AO vectors')
     call Allocate_DT(ao,bs(1:ns),bs(1:ns),1,g,ns,0,Label='symmetry full vector')
@@ -770,7 +770,7 @@ subroutine ReferenceFock(ierr)
   call ReadOne(ierr)
   if (ierr/=0) exit build_fock
   ierr=1
-  density=Zero
+  density(:,:,:)=Zero
   ! Overlap validation and densities are independently symmetry-blocked.
   grad=Zero
   do s=1,ns
@@ -791,7 +791,7 @@ subroutine ReferenceFock(ierr)
   end do
   message='Symmetry ROHF orbitals are not orthonormal.'
   if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.)))) exit build_fock
-  fock=Zero
+  fock(:,:,:)=Zero
   if (ROMP2_IsRoot()) then
     fock(:,:,1)=hcore
     fock(:,:,2)=hcore

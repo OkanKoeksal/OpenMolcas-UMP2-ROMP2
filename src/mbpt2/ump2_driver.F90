@@ -151,7 +151,7 @@ else
   ! Collect the local vector counts on every rank. The resulting rank-block
   ! layout defines the global P ordering used by both spin transformations.
   call mma_allocate(ChoCounts,nWorkers,label='UMP2 Cholesky counts')
-  ChoCounts = 0
+  ChoCounts(:) = 0
 
   if (Parallel) then
     ChoCounts(MyRank+1) = nChoLocal
@@ -237,8 +237,8 @@ else
   call mma_allocate(RedVec,nRead,label='UMP2 reduced vector')
 
   ! Nonlocal rank blocks must be exactly zero before the global sum.
-  La = Zero
-  Lb = Zero
+  La(:,:,:) = Zero
+  Lb(:,:,:) = Zero
 
   ! Case 0 gives A2(nBas*nBas,1) and A3(nBas,nBas,1) aliases.
   ! Allocate_SBA does NOT initialize ipOff: set it explicitly.
@@ -246,7 +246,7 @@ else
   call Allocate_DT(AO,Dims,Dims,1,1,1,0,Label='UMP2 full AO vector')
   HaveAO = .true.
   AO%ipOff = 1
-  Skip = 0
+  Skip(:) = 0
   Skip(1) = 1
   iRedC = -1
 

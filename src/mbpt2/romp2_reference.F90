@@ -168,8 +168,8 @@ contains
   subroutine BuildFockMatrices()
   ! ONEINT and ORDINT I/O are local in the Molcas reader layer.
   ! Root is the sole file reader: distribute complete data explicitly.
-  H=Zero
-  S=Zero
+  H(:,:)=Zero
+  S(:,:)=Zero
   rc=0
   if (ROMP2_IsRoot()) call ReadOneMatrices()
   if (ROMP2_Any(rc/=0)) return
@@ -206,7 +206,7 @@ contains
     opt=1
     do i=1,nBas
       do j=1,i
-        Buf=Zero
+        Buf(:)=Zero
         rc=0
         call RdOrd_(rc,opt,1,1,1,1,Buf,np+1,nmat)
         opt=2
@@ -237,16 +237,16 @@ contains
   end if
   call DGEMM_('N','T',nBas,nBas,nOccA,One,CAlpha,nBas,CAlpha,nBas,Zero,DA,nBas)
   call DGEMM_('N','T',nBas,nBas,nOccB,One,CBeta,nBas,CBeta,nBas,Zero,DB,nBas)
-  FA=H
-  FB=H
+  FA(:,:)=H
+  FB(:,:)=H
   if (DoCholesky) then
     call ROMP2_Cho_Fock(DA,DB,FA,FB,rc,Message)
     if (ROMP2_Any(rc/=0)) return
   else
     ! Include H once, then distribute matrix-element contractions.
     if (.not.ROMP2_IsRoot()) then
-      FA=Zero
-      FB=Zero
+      FA(:,:)=Zero
+      FB(:,:)=Zero
     end if
     do j=1,nBas
       do i=1,nBas

@@ -99,7 +99,7 @@ subroutine UMP2_Conventional_Energy(ierr,Message)
   end if
   call SyncError()
   if ((ierr == 0) .and. Parallel) then
-    Components = [EAA,EBB,EAB]
+    Components(:) = [EAA,EBB,EAB]
     call GADGOp(Components,3,'+')
     EAA = Components(1)
     EBB = Components(2)
@@ -263,12 +263,12 @@ contains
     call mma_allocate(AO,nBas,nBas,label='UMP2 AO pair matrix')
     call mma_allocate(Tmp,nBas,nO,label='UMP2 first quarter')
     call mma_allocate(OV,nV,nO,label='UMP2 first half row')
-    Half = Zero
+    Half(:,:,:) = Zero
     iOpt = 1
     do q=1,nPair
       ! RdOrd_ uses (lBuf-1)/nPair to select the number of complete rows.
       ! Read the stored path directly, avoiding RdOrd's saved route flag.
-      Buf = Zero
+      Buf(:) = Zero
       if (Reader) then
         call RdOrd_(ReadRC,iOpt,1,1,1,1,Buf,nPair+1,nMat)
         iOpt = 2

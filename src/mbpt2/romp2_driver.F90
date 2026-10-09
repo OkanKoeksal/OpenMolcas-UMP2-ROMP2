@@ -103,7 +103,7 @@ if (ROMP2_IsParallel()) then
   call GADGOp(CBeta(1,1),size(CBeta),'+')
   call GADGOp(EOrbA(1),size(EOrbA),'+')
   call GADGOp(EOrbB(1),size(EOrbB),'+')
-  Singles=[E1A,E1B]
+  Singles(:)=[E1A,E1B]
   call GADGOp(Singles(1),2,'+')
   E1A=Singles(1)
   E1B=Singles(2)

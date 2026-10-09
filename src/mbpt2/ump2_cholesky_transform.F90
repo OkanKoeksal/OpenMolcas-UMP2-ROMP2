@@ -81,8 +81,8 @@ subroutine UMP2_Transform_AO_Batch(LAO,La,Lb,ierr,Message)
   ierr = 0
   Message = ''
 
-  La = Zero
-  Lb = Zero
+  La(:,:,:) = Zero
+  Lb(:,:,:) = Zero
 
   if (nSym /= 1) then
     call Fail('UMP2 transformation requires C1 symmetry.')
@@ -271,8 +271,8 @@ contains
 
     ! Never leave partially transformed output on a detected error.
 
-    La = Zero
-    Lb = Zero
+    La(:,:,:) = Zero
+    Lb(:,:,:) = Zero
 
   end subroutine Fail
 

@@ -183,7 +183,7 @@ subroutine ReadCount(Label,Value)
 
   Value = 0
   nData = 0
-  Values = 0
+  Values(:) = 0
 
   call Qpg_iArray(Label,Exists,nData)
 

@@ -36,7 +36,7 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
   integer(kind=iwp) :: k,first,last,nBlock,info,i,a
   ierr=0
   E1=Zero
-  eps=Zero
+  eps(:)=Zero
   ! Frozen-core convention: diagonalize the FULL occupied block first,
   ! then exclude its nFrozen lowest eigenvectors from correlation.
   ! Alpha and beta frozen subspaces may differ after semicanonicalization.
@@ -81,7 +81,7 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
     call mma_deallocate(W)
   end do
   if (ierr==0) then
-    C=Cnew
+    C(:,:)=Cnew
     call DGEMM_('N','N',n,n,n,One,F,n,C,n,Zero,T,n)
     call DGEMM_('T','N',n,n,n,One,C,n,T,n,Zero,M,n)
     ! Core electrons remain in the ROHF density/Fock/reference energy.
