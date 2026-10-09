@@ -19,6 +19,7 @@ module Open_Shell_Symmetry
 use Definitions, only: wp,iwp,u6,RtoB
 use Constants, only: Zero, One, Three, Four, Five, Half
 use Symmetry_Info, only: Mul
+use Index_Functions, only: nTri_Elem
 use Para_Info, only: nProcs,MyRank
 use ROMP2_Parallel, only: ROMP2_Any,ROMP2_IsRoot,ROMP2_IsParallel,ROMP2_SyncError
 use ROMP2_Semicanonical, only: ROMP2_Semi
@@ -302,7 +303,7 @@ subroutine ReadReference(ierr)
   call ReadCounts('nFro',nf,ierr)
   if (ierr/=0) return
   ierr=1
-  message='Reference-frozen orbitals are unsupported; freeze only in MBPT2.'
+  message='Reference-frozen orbitals are unsupported: freeze only in MBPT2.'
   if (any(nf(1:ns)/=0)) return
   if (restricted) then
     call ReadCounts('nAsh',active,ierr)
@@ -384,7 +385,7 @@ end subroutine ReadReference
 
 subroutine SynchronizeReference()
   ! Explicitly replicate root reference data before any MPI-distributed
-  ! Fock, transformation, or doubles work.  The C1 drivers are untouched;
+  ! Fock, transformation, or doubles work.  The C1 drivers are untouched:
   ! this routine is used only by the non-C1 symmetry path.
   real(kind=wp) :: scalar(1)
   if (.not.ROMP2_IsParallel()) return
@@ -402,7 +403,7 @@ subroutine SynchronizeReference()
 end subroutine SynchronizeReference
 
 subroutine SynchronizeFrozen()
-  ! The shared open-shell input reader parses MBPT2 input on every rank; make
+  ! The shared open-shell input reader parses MBPT2 input on every rank: make
   ! rank zero's accepted counts authoritative for all subsequent maps.
   if (.not.ROMP2_IsParallel()) return
   if (.not.ROMP2_IsRoot()) frozen(1:ns)=0
@@ -425,7 +426,7 @@ subroutine MakePairs(ierr)
       t=Mul(g,s)
       if (s<t) cycle
       if (s==t) then
-        p=p+bs(s)*(bs(s)+1)/2
+        p=p+nTri_Elem(bs(s))
       else
         p=p+bs(s)*bs(t)
       end if
@@ -527,7 +528,7 @@ subroutine ReadConventional(ierr)
       t=Mul(g,s)
       if ((s<t).or.(bs(s)*bs(t)==0)) cycle
       np=bs(s)*bs(t)
-      if (s==t) np=bs(s)*(bs(s)+1)/2
+      if (s==t) np=nTri_Elem(bs(s))
       p0=pairindex(off(s)+1,off(t)+1)-1
       do u=1,ns
         v=Mul(g,u)
@@ -535,7 +536,7 @@ subroutine ReadConventional(ierr)
         ! Packed ORDINT stores only the lower symmetry-pair triangle.
         if ((.not.square).and.(s*(s-1)/2+t<u*(u-1)/2+v)) cycle
         nq=bs(u)*bs(v)
-        if (u==v) nq=bs(u)*(bs(u)+1)/2
+        if (u==v) nq=nTri_Elem(bs(u))
         q0=pairindex(off(u)+1,off(v)+1)-1
         opt=1
         do p=1,np
@@ -667,7 +668,7 @@ subroutine ReadCholesky(ierr,initialized)
     end do
     call Deallocate_DT(ao)
     message='Symmetry Cholesky vector read failed.'
-    ! Rank-local vector loops have unequal lengths; synchronize afterwards.
+    ! Rank-local vector loops have unequal lengths: synchronize afterwards.
     call ROMP2_SyncError(rc,message)
     if (rc/=0) exit
   end do
@@ -877,7 +878,7 @@ subroutine ReferenceFock(ierr)
     end do
   end do
   grad=maxval(abs(vec))
-  message='ROHF symmetry stationarity check failed; tighten RASSCF convergence.'
+  message='ROHF symmetry stationarity check failed: tighten RASSCF convergence.'
   if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) exit build_fock
   ierr=0
   end block build_fock
