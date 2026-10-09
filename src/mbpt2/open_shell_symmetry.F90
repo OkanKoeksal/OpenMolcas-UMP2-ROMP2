@@ -14,7 +14,7 @@
 module Open_Shell_Symmetry
 ! Abelian symmetry energy path. C1 continues to use the existing drivers.
 ! AO pair metrics and occupied-virtual pairs are grouped by product irrep.
-! Conventional metrics and transformed vectors are replicated; computation
+! Conventional metrics and transformed vectors are replicated: computation
 ! is distributed. This is an in-core implementation, with memory checks.
 use Definitions, only: wp,iwp,u6,RtoB
 use Constants, only: Zero, One, Three, Four, Five, Half
@@ -49,6 +49,15 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   real(kind=wp) :: e(3),total,corr
   real(kind=wp),allocatable :: c(:,:),f(:,:),en(:)
   logical :: cho_open
+  interface
+    subroutine UMP2_RdInp(ierr,Message,SymFrozen,SymOcc)
+      use Definitions, only: iwp
+      integer(kind=iwp),intent(out) :: ierr
+      character(len=*),intent(out) :: Message
+      integer(kind=iwp),intent(out),optional :: SymFrozen(:)
+      integer(kind=iwp),intent(in),optional :: SymOcc(:,:)
+    end subroutine UMP2_RdInp
+  end interface
   integer(kind=iwp),external :: iPrintLevel
   logical(kind=iwp),external :: Reduce_Prt
 #include "warnings.h"
@@ -72,7 +81,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   ! for all real reference data used by distributed contractions.  This
   ! avoids rank-local RUNFILE state from changing the MPI result.
   call SynchronizeReference()
-  call ReadFrozen(ierr)
+  call UMP2_RdInp(ierr,message,frozen(1:ns),occ(1:ns,:))
   call ROMP2_SyncError(ierr,message)
   if (ierr/=0) exit calculation
   ! Likewise use the root input parse as the single frozen-space definition.
@@ -291,7 +300,7 @@ subroutine ReadReference(ierr)
   call ReadCounts('nFro',nf,ierr)
   if (ierr/=0) return
   ierr=1
-  message='Reference-frozen orbitals are unsupported; freeze only in MBPT2.'
+  message='Reference-frozen orbitals are unsupported: freeze only in MBPT2.'
   if (any(nf(1:ns)/=0)) return
   if (restricted) then
     call ReadCounts('nAsh',active,ierr)
@@ -373,7 +382,7 @@ end subroutine ReadReference
 
 subroutine SynchronizeReference()
   ! Explicitly replicate root reference data before any MPI-distributed
-  ! Fock, transformation, or doubles work.  The C1 drivers are untouched;
+  ! Fock, transformation, or doubles work.  The C1 drivers are untouched:
   ! this routine is used only by the non-C1 symmetry path.
   real(kind=wp) :: scalar(1)
   if (.not.ROMP2_IsParallel()) return
@@ -391,72 +400,13 @@ subroutine SynchronizeReference()
 end subroutine SynchronizeReference
 
 subroutine SynchronizeFrozen()
-  ! Parse MBPT2 input on every rank for normal error handling, then make
+  ! The shared open-shell input reader parses MBPT2 input on every rank: make
   ! rank zero's accepted counts authoritative for all subsequent maps.
   if (.not.ROMP2_IsParallel()) return
   if (.not.ROMP2_IsRoot()) frozen(1:ns)=0
   call gaIgOP(frozen(1),ns,'+')
 end subroutine SynchronizeFrozen
 
-subroutine ReadFrozen(ierr)
-  use spool, only: SpoolInp,Close_LuSpool
-  integer(kind=iwp),intent(out) :: ierr
-  integer(kind=iwp) :: lu,eq,k,start,n,ios,value,s
-  character(len=180) :: raw,line,values,token
-  character(len=4) :: command
-  character(len=180),external :: Get_Ln
-  logical :: seen
-  ierr=1
-  frozen=0
-  seen=.false.
-  message='Specify Frozen with one nonnegative count per irrep in RUNFILE order.'
-  lu=17
-  call SpoolInp(lu)
-  rewind(lu)
-  call RdNLst(lu,'MBPT2')
-  parse_input: block
-  do
-    raw=Get_Ln(lu)
-    line=raw
-    call StdFmt(line,command)
-    if (command=='END ') exit
-    if ((command/='FROZ').or.seen) exit parse_input
-    eq=index(raw,'=')
-    values=''
-    if (eq>0) values=raw(eq+1:)
-    if (len_trim(values)==0) values=Get_Ln(lu)
-    ! Strict parsing: reject missing, repeated, negative, or extra counts.
-    n=0
-    k=1
-    do while (k<=len_trim(values))
-      if ((values(k:k)==' ').or.(values(k:k)==achar(9)).or.(values(k:k)==',')) then
-        k=k+1
-        cycle
-      end if
-      start=k
-      do while (k<=len_trim(values))
-        if (index('0123456789',values(k:k))==0) exit
-        k=k+1
-      end do
-      if (k==start) exit parse_input
-      n=n+1
-      if (n>ns) exit parse_input
-      token=values(start:k-1)
-      value=0
-      read(token,*,iostat=ios) value
-      if ((ios/=0).or.(value<0)) exit parse_input
-      frozen(n)=value
-    end do
-    if (n/=ns) exit parse_input
-    do s=1,ns
-      if (frozen(s)>minval(occ(s,:))) exit parse_input
-    end do
-    seen=.true.
-  end do
-  if (seen) ierr=0
-  end block parse_input
-  call Close_LuSpool(lu)
-end subroutine ReadFrozen
 
 subroutine MakePairs(ierr)
   integer(kind=iwp),intent(out) :: ierr
@@ -715,7 +665,7 @@ subroutine ReadCholesky(ierr,initialized)
     end do
     call Deallocate_DT(ao)
     message='Symmetry Cholesky vector read failed.'
-    ! Rank-local vector loops have unequal lengths; synchronize afterwards.
+    ! Rank-local vector loops have unequal lengths: synchronize afterwards.
     call ROMP2_SyncError(rc,message)
     if (rc/=0) exit
   end do
@@ -925,7 +875,7 @@ subroutine ReferenceFock(ierr)
     end do
   end do
   grad=maxval(abs(vec))
-  message='ROHF symmetry stationarity check failed; tighten RASSCF convergence.'
+  message='ROHF symmetry stationarity check failed: tighten RASSCF convergence.'
   if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) exit build_fock
   ierr=0
   end block build_fock

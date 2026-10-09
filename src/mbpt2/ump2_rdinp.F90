@@ -11,7 +11,7 @@
 ! Copyright (C) 2026, Okan Koeksal                                     *
 !***********************************************************************
 
-subroutine UMP2_RdInp(ierr,Message)
+subroutine UMP2_RdInp(ierr,Message,SymFrozen,SymOcc)
 
 use Definitions, only: iwp
 use spool, only: SpoolInp, Close_LuSpool
@@ -21,10 +21,14 @@ use UMP2_Global, only: nSym, nOccA, nOccB, nFro, &
 implicit none
 
 integer(kind=iwp), intent(out) :: ierr
+! Optional irrep-resolved input for the symmetry-blocked open-shell path.
+integer(kind=iwp), intent(out), optional :: SymFrozen(:)
+integer(kind=iwp), intent(in), optional :: SymOcc(:,:)
 character(len=*), intent(out) :: Message
 
-integer(kind=iwp) :: LuSpool, EqPos, FrozenInput
-logical(kind=iwp) :: HaveFrozen, Parsed
+integer(kind=iwp) :: LuSpool, EqPos, FrozenInput, nInput, s
+integer(kind=iwp) :: FrozenCounts(8)
+logical(kind=iwp) :: HaveFrozen, Parsed, SymmetryInput
 
 character(len=4) :: Command
 character(len=180) :: Line, RawLine, ValueLine
@@ -39,22 +43,40 @@ Message = ''
 ! Invalidate old options and results before reading new input.
 ! Publish the frozen-core selection only after parsing succeeds.
 
-nFro = 0
-ExplicitFrozen = .false.
-EnergyReady = .false.
+SymmetryInput=present(SymFrozen).and.present(SymOcc)
+if (present(SymFrozen).neqv.present(SymOcc)) then
+  ierr=1
+  Message='Incomplete symmetry frozen-orbital input arguments.'
+  return
+end if
+if (SymmetryInput) then
+  nInput=size(SymFrozen)
+  if ((nInput<1).or.(nInput>8).or.(size(SymOcc,1)/=nInput).or.(size(SymOcc,2)/=2)) then
+    ierr=1
+    Message='Invalid symmetry frozen-orbital input dimensions.'
+    return
+  end if
+  SymFrozen=0
+else
+  nInput=1
+  nFro = 0
+  ExplicitFrozen = .false.
+  EnergyReady = .false.
+end if
 
 HaveFrozen = .false.
 FrozenInput = 0
+FrozenCounts=0
 
 ! UMP2_Read_Reference must have completed before this routine.
 
-if (nSym /= 1) then
+if ((.not.SymmetryInput).and.(nSym /= 1)) then
   ierr = 1
   Message = 'UMP2 input processing requires a C1 reference.'
   return
 end if
 
-if ((nOccA < 0) .or. (nOccB < 0)) then
+if ((.not.SymmetryInput).and.((nOccA < 0) .or. (nOccB < 0))) then
   ierr = 1
   Message = 'Invalid UHF occupation counts before input processing.'
   return
@@ -104,18 +126,30 @@ ReadCommands: do
         ValueLine = Get_Ln(LuSpool)
       end if
 
-      call ParseFrozen(ValueLine,FrozenInput,Parsed)
+      call ParseFrozen(ValueLine,FrozenCounts,nInput,Parsed)
 
       if (.not. Parsed) then
         ierr = 1
-        Message = 'Frozen requires exactly one nonnegative integer.'
+        Message = 'Frozen requires one nonnegative integer per irrep.'
         exit ReadCommands
       end if
 
-      if (FrozenInput > min(nOccA,nOccB)) then
-        ierr = 1
-        Message = 'Frozen exceeds the occupied count of one spin set.'
-        exit ReadCommands
+      if (SymmetryInput) then
+        do s=1,nInput
+          if (FrozenCounts(s)>minval(SymOcc(s,:))) then
+            ierr=1
+            Message='Frozen exceeds the occupied count in an irrep.'
+            exit
+          end if
+        end do
+        if (ierr/=0) exit ReadCommands
+      else
+        FrozenInput=FrozenCounts(1)
+        if (FrozenInput > min(nOccA,nOccB)) then
+          ierr = 1
+          Message = 'Frozen exceeds the occupied count of one spin set.'
+          exit ReadCommands
+        end if
       end if
 
       HaveFrozen = .true.
@@ -143,60 +177,58 @@ if (ierr /= 0) return
 
 if (.not. HaveFrozen) then
   ierr = 1
-  Message = 'Specify Frozen explicitly: use Frozen = 0 for all electrons.'
+  Message = 'Specify Frozen explicitly, with one count per irrep (zero to freeze none).'
   return
 end if
 
-nFro = FrozenInput
-ExplicitFrozen = .true.
+if (SymmetryInput) then
+  SymFrozen=FrozenCounts(1:nInput)
+else
+  nFro = FrozenInput
+  ExplicitFrozen = .true.
+end if
 
 contains
 
-subroutine ParseFrozen(Text,Value,Success)
+subroutine ParseFrozen(Text,Values,nExpected,Success)
 
   character(len=*), intent(in) :: Text
-  integer(kind=iwp), intent(out) :: Value
+  integer(kind=iwp), intent(out) :: Values(:)
+  integer(kind=iwp), intent(in) :: nExpected
   logical(kind=iwp), intent(out) :: Success
 
   character(len=len(Text)) :: Token
-  integer(kind=iwp) :: FirstDigit, LastDigit, k, IOStatus
+  integer(kind=iwp) :: k, first, last, count, ios
 
-  Value = 0
-  Success = .false.
-
-  Token = trim(adjustl(Text))
-  LastDigit = len_trim(Token)
-
-  if (LastDigit == 0) return
-
-  FirstDigit = 1
-  if (Token(1:1) == '+') FirstDigit = 2
-
-  if (FirstDigit > LastDigit) return
-
-  ! Reject multiple values, negative numbers, decimal values,
-  ! repetition syntax, and null list-directed values.
-  !
-  ! An ordinary list-directed integer read alone could silently
-  ! accept extra fields or a slash without assigning the value.
-
-  do k=FirstDigit,LastDigit
-    if (index('0123456789',Token(k:k)) == 0) return
+  Values=0
+  Success=.false.
+  last=len_trim(Text)
+  k=1
+  count=0
+  do while (k<=last)
+    if (index(' ,'//achar(9),Text(k:k))/=0) then
+      k=k+1
+      cycle
+    end if
+    first=k
+    if (Text(k:k)=='+') k=k+1
+    if (k>last) return
+    if (index('0123456789',Text(k:k))==0) return
+    do while (k<=last)
+      if (index('0123456789',Text(k:k))==0) exit
+      k=k+1
+    end do
+    if (k<=last) then
+      if (index(' ,'//achar(9),Text(k:k))==0) return
+    end if
+    count=count+1
+    if (count>nExpected) return
+    Token=Text(first:k-1)
+    read(Token,*,iostat=ios) Values(count)
+    if (ios/=0) return
+    if (Values(count)<0) return
   end do
-
-  read(Token,*,iostat=IOStatus) Value
-
-  if (IOStatus /= 0) then
-    Value = 0
-    return
-  end if
-
-  if (Value < 0) then
-    Value = 0
-    return
-  end if
-
-  Success = .true.
+  Success=(count==nExpected)
 
 end subroutine ParseFrozen
 
