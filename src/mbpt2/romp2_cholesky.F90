@@ -15,6 +15,7 @@ module ROMP2_Cholesky
 ! Serial/MPI C1 Cholesky lifecycle shared by the reference-Fock and doubles
 ! stages. AO vectors are streamed twice: no four-index AO tensor is built.
 use Definitions, only: wp,iwp,u6,RtoB
+use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero, One, Two, Three
 use Para_Info, only: nProcs,MyRank
 use ROMP2_Parallel
@@ -33,14 +34,6 @@ integer(kind=iwp),save :: Skip(8)=0
 real(kind=wp),allocatable,save :: RedVec(:)
 type(SBA_Type),target,save :: AO
 contains
-
-elemental logical function ROMP2_Cho_Is_Finite(x)
-
-  real(kind=wp), intent(in) :: x
-
-  ROMP2_Cho_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
-
-end function ROMP2_Cho_Is_Finite
 
 subroutine ROMP2_Cho_Open(ierr,Message)
   integer(kind=iwp),intent(out) :: ierr
@@ -76,7 +69,7 @@ subroutine ROMP2_Cho_Open(ierr,Message)
   nWorkers=1
   if (ROMP2_IsParallel()) nWorkers=nProcs
   call mma_allocate(Counts,nWorkers,label='ROMP2 vector counts')
-  Counts=0
+  Counts(:)=0
   if (ROMP2_IsParallel()) then
     Counts(MyRank+1)=nVec
     call gaIgOP(Counts(1),nWorkers,'+')
@@ -152,7 +145,7 @@ subroutine ReadVector(iVec,ierr,Message)
   end if
   ierr=1
   Message='Nonfinite ROMP2 AO Cholesky vector.'
-  if (.not.all(ROMP2_Cho_Is_Finite(AO%SB(1)%A3))) return
+  if (.not.all(ieee_is_finite(AO%SB(1)%A3))) return
   Scale=max(One,maxval(abs(AO%SB(1)%A3(:,:,1))))
   Message='ROMP2 AO Cholesky vector is not a full symmetric matrix.'
   if (maxval(abs(AO%SB(1)%A3(:,:,1)-transpose(AO%SB(1)%A3(:,:,1))))>1.0e-12_wp*Scale) return
@@ -184,8 +177,8 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
   call mma_allocate(Exchange,nBas,nBas,label='ROMP2 Cholesky exchange')
   ! H is present only on root, so the reduction includes it exactly once.
   if (.not.ROMP2_IsRoot()) then
-    FA=Zero
-    FB=Zero
+    FA(:,:)=Zero
+    FB(:,:)=Zero
   end if
   ierr=0
   iRedC=-1
@@ -193,14 +186,14 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
     call ReadVector(iVec,ierr,Message)
     if (ierr/=0) exit
     Charge=sum(DA*AO%SB(1)%A3(:,:,1))+sum(DB*AO%SB(1)%A3(:,:,1))
-    FA=FA+Charge*AO%SB(1)%A3(:,:,1)
-    FB=FB+Charge*AO%SB(1)%A3(:,:,1)
+    FA(:,:)=FA(:,:)+Charge*AO%SB(1)%A3(:,:,1)
+    FB(:,:)=FB(:,:)+Charge*AO%SB(1)%A3(:,:,1)
     call mult(AO%SB(1)%A3(:,:,1),DA,Work)
     call mult(Work,AO%SB(1)%A3(:,:,1),Exchange)
-    FA=FA-Exchange
+    FA(:,:)=FA(:,:)-Exchange(:,:)
     call mult(AO%SB(1)%A3(:,:,1),DB,Work)
     call mult(Work,AO%SB(1)%A3(:,:,1),Exchange)
-    FB=FB-Exchange
+    FB(:,:)=FB(:,:)-Exchange(:,:)
   end do
   call mma_deallocate(Work)
   call mma_deallocate(Exchange)
@@ -212,7 +205,7 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
     call GADGOp(FB(1,1),size(FB),'+')
   end if
   if (ROMP2_Any(logical( &
-      (.not.all(ROMP2_Cho_Is_Finite(FA))).or.(.not.all(ROMP2_Cho_Is_Finite(FB))), &
+      (.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB))), &
       kind=kind(.true.)))) then
     ierr=1
     Message='Nonfinite ROMP2 Cholesky Fock matrix.'
@@ -248,8 +241,8 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
   end if
   call mma_allocate(La,nVA,nOA,nGlobal,label='ROMP2 alpha OV Cholesky')
   call mma_allocate(Lb,nVB,nOB,nGlobal,label='ROMP2 beta OV Cholesky')
-  La=Zero
-  Lb=Zero
+  La(:,:,:)=Zero
+  Lb(:,:,:)=Zero
   ierr=0
   iRedC=-1
   do iVec=1,nVec
@@ -267,7 +260,7 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
       if (size(Lb)>0) call GADGOp(Lb(1,1,1),size(Lb),'+')
     end if
     if (ROMP2_Any(logical( &
-        (.not.all(ROMP2_Cho_Is_Finite(La))).or.(.not.all(ROMP2_Cho_Is_Finite(Lb))), &
+        (.not.all(ieee_is_finite(La))).or.(.not.all(ieee_is_finite(Lb))), &
         kind=kind(.true.)))) then
       ierr=1
       Message='Nonfinite assembled Cholesky vectors.'
@@ -275,7 +268,7 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
       call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB,nOA,nVA,nOB,nVB,nGlobal,DenTol,EAA,EBB,EAB,ierr)
       if (ierr/=0) then
         Message='ROMP2 Cholesky doubles failed: check orbital-energy denominators.'
-      else if (.not.all(ROMP2_Cho_Is_Finite([EAA,EBB,EAB]))) then
+      else if (.not.all(ieee_is_finite([EAA,EBB,EAB]))) then
         ierr=1
         Message='Nonfinite ROMP2 Cholesky doubles energy.'
       else

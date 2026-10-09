@@ -14,6 +14,7 @@
 subroutine UMP2_Read_Reference(ierr,Message)
 
 use Definitions, only: wp, iwp
+use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use stdalloc, only: mma_allocate, mma_deallocate
 use UMP2_Global, only: UMP2_Clean, ReferenceMethod, &
                        nSym, nBas, nOrb, nOccA, nOccB, &
@@ -122,7 +123,7 @@ end if
 
 call Get_dScalar('SCF energy',ESCF)
 
-if (.not. UMP2_Is_Finite(ESCF)) then
+if (.not. ieee_is_finite(ESCF)) then
   call Fail('The SCF energy is not finite.')
   return
 end if
@@ -162,15 +163,6 @@ EOrbB(:) = Buffer(1:nOrb)
 call mma_deallocate(Buffer)
 
 contains
-
-elemental logical function UMP2_Is_Finite(x)
-
-  real(kind=wp), intent(in) :: x
-
-  UMP2_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
-
-end function UMP2_Is_Finite
-
 
 subroutine ReadCount(Label,Value)
 
@@ -233,7 +225,7 @@ subroutine ReadRealRecord(Label,nKeep,nPadded,Values)
   ! Trailing padding is not part of the retained reference.
   ! Check only entries that will actually be used.
 
-  if (.not. all(UMP2_Is_Finite(Values(1:nKeep)))) then
+  if (.not. all(ieee_is_finite(Values(1:nKeep)))) then
     call mma_deallocate(Values)
     call Fail('Nonfinite RUNFILE data: '//trim(Label))
     return

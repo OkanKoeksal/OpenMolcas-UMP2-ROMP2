@@ -17,6 +17,7 @@ module Open_Shell_Symmetry
 ! Conventional metrics and transformed vectors are replicated: computation
 ! is distributed. This is an in-core implementation, with memory checks.
 use Definitions, only: wp,iwp,u6,RtoB
+use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero, One, Three, Four, Five, Half
 use Symmetry_Info, only: Mul
 use Index_Functions, only: nTri_Elem
@@ -151,7 +152,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   if (ierr/=0) exit calculation
   corr=sum(e)+sum(singles)
   total=eref+corr
-  if (ROMP2_Any(logical(.not.Open_Shell_Is_Finite(total),kind=kind(.true.)))) then
+  if (ROMP2_Any(logical(.not.ieee_is_finite(total),kind=kind(.true.)))) then
     message='Nonfinite symmetry MP2 total energy.'
     exit calculation
   end if
@@ -251,11 +252,6 @@ subroutine PrintResultsHeader()
 
 end subroutine PrintResultsHeader
 
-elemental logical function Open_Shell_Is_Finite(x)
-  real(kind=wp),intent(in) :: x
-  Open_Shell_Is_Finite=(x<=huge(x)).and.(x>=-huge(x))
-end function Open_Shell_Is_Finite
-
 logical function MemoryOK(elements)
   real(kind=wp),intent(in) :: elements
   integer(kind=iwp) :: available,element_limit
@@ -330,7 +326,7 @@ subroutine ReadReference(ierr)
     call Get_dScalar('SCF energy',eref)
   end if
   ierr=1
-  if (.not.Open_Shell_Is_Finite(eref)) return
+  if (.not.ieee_is_finite(eref)) return
   if (any(occ(1:ns,1)>bs(1:ns)).or.any(occ(1:ns,2)>bs(1:ns))) return
   nb=sum(bs(1:ns))
   if (nb<=0) return
@@ -357,7 +353,7 @@ subroutine ReadReference(ierr)
     if (n/=sum(bs(1:ns)**2)) return
     call mma_allocate(buffer,n,label='symmetry coefficient input')
     call Get_dArray(trim(label),buffer,n)
-    if (.not.all(Open_Shell_Is_Finite(buffer))) then
+    if (.not.all(ieee_is_finite(buffer))) then
       call mma_deallocate(buffer)
       return
     end if
@@ -378,7 +374,7 @@ subroutine ReadReference(ierr)
     if (.not.found) return
     if (l/=nb) return
     call Get_dArray(trim(label),eps(:,spin),nb)
-    if (.not.all(Open_Shell_Is_Finite(eps(:,spin)))) return
+    if (.not.all(ieee_is_finite(eps(:,spin)))) return
   end do
   ierr=0
 end subroutine ReadReference
@@ -546,7 +542,7 @@ subroutine ReadConventional(ierr)
           opt=2
           if (rc==0) then
             if (nmat/=1) rc=1
-            if (.not.all(Open_Shell_Is_Finite(buffer(1:nq)))) rc=1
+            if (.not.all(ieee_is_finite(buffer(1:nq)))) rc=1
           end if
           if (ROMP2_Any(rc/=0)) exit read_integrals
 
@@ -661,7 +657,7 @@ subroutine ReadCholesky(ierr,initialized)
         t=symorb(nu)
         blocks(g)%vectors(p,j)=ao%SB(s)%A3(mu-off(s),nu-off(t),1)
       end do
-      if (.not.all(Open_Shell_Is_Finite(blocks(g)%vectors(:,j)))) then
+      if (.not.all(ieee_is_finite(blocks(g)%vectors(:,j)))) then
         rc=1
         exit
       end if
@@ -705,7 +701,7 @@ subroutine ReadOne(ierr)
       if (pass==2) label='Mltpl  0'
       call RdOne(rc,opt,label,comp,buffer,sy)
       if (rc/=0) exit
-      if (.not.all(Open_Shell_Is_Finite(buffer(1:np)))) then
+      if (.not.all(ieee_is_finite(buffer(1:np)))) then
         rc=1
         exit
       end if
@@ -790,7 +786,7 @@ subroutine ReferenceFock(ierr)
     end do
   end do
   message='Symmetry ROHF orbitals are not orthonormal.'
-  if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.)))) exit build_fock
+  if (ROMP2_Any(logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.)))) exit build_fock
   fock(:,:,:)=Zero
   if (ROMP2_IsRoot()) then
     fock(:,:,1)=hcore
@@ -850,11 +846,11 @@ subroutine ReferenceFock(ierr)
   end if
   if (ROMP2_IsParallel()) call GADGOp(fock(1,1,1),size(fock),'+')
   message='Nonfinite symmetry reference Fock matrix.'
-  if (ROMP2_Any(logical(.not.all(Open_Shell_Is_Finite(fock)),kind=kind(.true.)))) exit build_fock
+  if (ROMP2_Any(logical(.not.all(ieee_is_finite(fock)),kind=kind(.true.)))) exit build_fock
   call Get_dScalar('PotNuc',enuc)
   check=enuc+Half*(sum(density(:,:,1)*(hcore+fock(:,:,1)))+sum(density(:,:,2)*(hcore+fock(:,:,2))))
   message='Reconstructed symmetry ROHF energy differs from RASSCF.'
-  if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(check)).or.(abs(check-eref)>1.0e-7_wp), &
+  if (ROMP2_Any(logical((.not.ieee_is_finite(check)).or.(abs(check-eref)>1.0e-7_wp), &
                        kind=kind(.true.)))) exit build_fock
   ! Stationarity test in the shared spatial ROHF basis, before rotation.
   grad=Zero
@@ -879,7 +875,7 @@ subroutine ReferenceFock(ierr)
   end do
   grad=maxval(abs(vec))
   message='ROHF symmetry stationarity check failed: tighten RASSCF convergence.'
-  if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) exit build_fock
+  if (ROMP2_Any(logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) exit build_fock
   ierr=0
   end block build_fock
   call mma_deallocate(work)
@@ -1014,7 +1010,7 @@ subroutine Doubles(energy,ierr)
             if ((spin==other).and.(b>=a)) cycle
             if (Mul(symorb(i),symorb(a))/=Mul(symorb(j),symorb(b))) cycle
             den=eps(i,spin)+eps(j,other)-eps(a,spin)-eps(b,other)
-            if ((.not.Open_Shell_Is_Finite(den)).or.(abs(den)<=1.0e-12_wp)) then
+            if ((.not.ieee_is_finite(den)).or.(abs(den)<=1.0e-12_wp)) then
               ierr=1
               cycle
             end if
@@ -1026,7 +1022,7 @@ subroutine Doubles(energy,ierr)
       end do
     end do
   end do
-  if (.not.all(Open_Shell_Is_Finite(energy))) ierr=1
+  if (.not.all(ieee_is_finite(energy))) ierr=1
   message='Invalid denominator or nonfinite symmetry doubles energy.'
   call ROMP2_SyncError(ierr,message)
   if (ierr/=0) return

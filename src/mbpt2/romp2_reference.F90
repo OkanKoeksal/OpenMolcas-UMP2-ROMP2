@@ -13,6 +13,7 @@
 
 module ROMP2_Reference
 use Definitions, only: wp, iwp, u6
+use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero, One, Half
 use UMP2_Global
 use ROMP2_Parallel
@@ -23,14 +24,6 @@ implicit none
 private
 public :: ROMP2_Read, ROMP2_Fock
 contains
-
-elemental logical function ROMP2_Ref_Is_Finite(x)
-
-  real(kind=wp), intent(in) :: x
-
-  ROMP2_Ref_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
-
-end function ROMP2_Ref_Is_Finite
 
 subroutine ROMP2_Read(ierr,Message)
   integer(kind=iwp), intent(out) :: ierr
@@ -78,7 +71,7 @@ subroutine ROMP2_Read(ierr,Message)
   CBeta(:,:)=CAlpha(:,:)
   call Get_dScalar('Last energy',ESCF)
   if (ROMP2_Any(logical( &
-      (.not.all(ROMP2_Ref_Is_Finite(CAlpha))).or.(.not.ROMP2_Ref_Is_Finite(ESCF)), &
+      (.not.all(ieee_is_finite(CAlpha))).or.(.not.ieee_is_finite(ESCF)), &
       kind=kind(.true.)))) return
   ReferenceMethod='ROHF    '
   ierr=0
@@ -183,7 +176,7 @@ contains
     MA(i,i)=MA(i,i)-One
   end do
   if (ROMP2_Any(logical( &
-      (.not.all(ROMP2_Ref_Is_Finite(MA))).or.(maxval(abs(MA))>1.0e-7_wp), &
+      (.not.all(ieee_is_finite(MA))).or.(maxval(abs(MA))>1.0e-7_wp), &
       kind=kind(.true.)))) then
     Message='ROHF orbitals are not orthonormal in the ONEINT overlap metric.'
     return
@@ -212,7 +205,7 @@ contains
         opt=2
         if (rc==0) then
           if (nmat/=1) rc=1
-          if (.not.all(ROMP2_Ref_Is_Finite(Buf(1:np)))) rc=1
+          if (.not.all(ieee_is_finite(Buf(1:np)))) rc=1
         end if
         if (ROMP2_Any(rc/=0)) return
         if (ROMP2_IsParallel()) call GADGOp(Buf(1),np,'+')
@@ -267,12 +260,12 @@ contains
     end if
   end if
   if (ROMP2_Any(logical( &
-      (.not.all(ROMP2_Ref_Is_Finite(FA))).or.(.not.all(ROMP2_Ref_Is_Finite(FB))), &
+      (.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB))), &
       kind=kind(.true.)))) return
   call Get_dScalar('PotNuc',enuc)
   echeck=enuc+Half*(sum(DA*(H+FA))+sum(DB*(H+FB)))
   if (ROMP2_Any(logical( &
-      (.not.ROMP2_Ref_Is_Finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp), &
+      (.not.ieee_is_finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp), &
       kind=kind(.true.)))) then
     if (ROMP2_IsRoot()) then
       write(u6,'(6X,A,T48,F20.10,A)') 'Stored ROHF reference energy',ESCF,' a.u.'

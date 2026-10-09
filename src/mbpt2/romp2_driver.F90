@@ -13,6 +13,7 @@
 
 subroutine ROMP2_Driver(ireturn)
 use Definitions, only: wp,iwp,u6
+use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero
 use UMP2_Global
 use ROMP2_Parallel
@@ -124,7 +125,7 @@ ECorr=E1A+E1B+EAA+EBB+EAB
 ETotal=ESCF+ECorr
 ! Assignment converts the intrinsic result to the default logical kind
 ! expected by ROMP2_Any, including builds with promoted default kinds.
-NonfiniteTotal=.not.ROMP2_Driver_Is_Finite(ETotal)
+NonfiniteTotal=.not.ieee_is_finite(ETotal)
 if (ROMP2_Any(NonfiniteTotal)) then
   Message='Nonfinite ROMP2 total energy.'
   return
@@ -183,15 +184,6 @@ call Add_Info('E_ROMP2_BB',[EBB],1,8)
 call Add_Info('E_ROMP2_AB',[EAB],1,8)
 ireturn=_RC_ALL_IS_WELL_
 end subroutine RunCalculation
-
-
-elemental logical function ROMP2_Driver_Is_Finite(x)
-
-  real(kind=wp), intent(in) :: x
-
-  ROMP2_Driver_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
-
-end function ROMP2_Driver_Is_Finite
 
 subroutine PrintResultsHeader()
 

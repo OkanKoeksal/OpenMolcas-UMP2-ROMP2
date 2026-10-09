@@ -14,6 +14,7 @@
 module UMP2_Cholesky_Transform
 
 use Definitions, only: wp, iwp
+use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero, One
 use stdalloc, only: mma_allocate, mma_deallocate
 use linalg_mod, only: mult
@@ -26,14 +27,6 @@ private
 public :: UMP2_Transform_AO_Batch
 
 contains
-
-elemental logical function UMP2_Cho_Is_Finite(x)
-
-  real(kind=wp), intent(in) :: x
-
-  UMP2_Cho_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
-
-end function UMP2_Cho_Is_Finite
 
 subroutine UMP2_Transform_AO_Batch(LAO,La,Lb,ierr,Message)
 
@@ -157,17 +150,17 @@ subroutine UMP2_Transform_AO_Batch(LAO,La,Lb,ierr,Message)
     return
   end if
 
-  if (.not. all(UMP2_Cho_Is_Finite(CAlpha))) then
+  if (.not. all(ieee_is_finite(CAlpha))) then
     call Fail('Nonfinite alpha MO coefficients.')
     return
   end if
 
-  if (.not. all(UMP2_Cho_Is_Finite(CBeta))) then
+  if (.not. all(ieee_is_finite(CBeta))) then
     call Fail('Nonfinite beta MO coefficients.')
     return
   end if
 
-  if (.not. all(UMP2_Cho_Is_Finite(LAO))) then
+  if (.not. all(ieee_is_finite(LAO))) then
     call Fail('Nonfinite AO Cholesky vector elements.')
     return
   end if
@@ -254,8 +247,8 @@ subroutine UMP2_Transform_AO_Batch(LAO,La,Lb,ierr,Message)
 
   call mma_deallocate(Work)
 
-  if ((.not. all(UMP2_Cho_Is_Finite(La))) .or. &
-      (.not. all(UMP2_Cho_Is_Finite(Lb)))) then
+  if ((.not. all(ieee_is_finite(La))) .or. &
+      (.not. all(ieee_is_finite(Lb)))) then
     call Fail('Nonfinite transformed Cholesky vector elements.')
     return
   end if

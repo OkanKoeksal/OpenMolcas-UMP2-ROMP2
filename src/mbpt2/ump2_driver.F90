@@ -15,6 +15,7 @@
 subroutine UMP2_Driver(ireturn)
 
 use Definitions, only: wp, iwp, u6, RtoB
+use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero, Three
 use Para_Info, only: nProcs, MyRank, Is_Real_Par
 use Data_Structures, only: SBA_Type, Allocate_DT, Deallocate_DT
@@ -319,8 +320,8 @@ else
 
   end if
 
-  if ((.not. all(UMP2_Is_Finite(La))) .or. &
-      (.not. all(UMP2_Is_Finite(Lb)))) then
+  if ((.not. all(ieee_is_finite(La))) .or. &
+      (.not. all(ieee_is_finite(Lb)))) then
     call Fail(_RC_GENERAL_ERROR_, &
               'Nonfinite globally assembled transformed Cholesky vectors.')
     return
@@ -346,7 +347,7 @@ end if
 ECorr = EAA+EBB+EAB
 ETotal = ESCF+ECorr
 
-if (.not. all(UMP2_Is_Finite([ESCF,EAA,EBB,EAB,ECorr,ETotal]))) then
+if (.not. all(ieee_is_finite([ESCF,EAA,EBB,EAB,ECorr,ETotal]))) then
   call Fail(_RC_GENERAL_ERROR_,'UMP2 produced a nonfinite energy.')
   return
 end if
@@ -406,15 +407,6 @@ call UMP2_Clean()
 ireturn = _RC_ALL_IS_WELL_
 
 contains
-
-elemental logical function UMP2_Is_Finite(x)
-
-  real(kind=wp), intent(in) :: x
-
-  UMP2_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
-
-end function UMP2_Is_Finite
-
 
 subroutine PrintResultsHeader()
 

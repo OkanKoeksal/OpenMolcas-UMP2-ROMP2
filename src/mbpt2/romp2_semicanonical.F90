@@ -13,17 +13,13 @@
 
 module ROMP2_Semicanonical
 use Definitions, only: wp, iwp
+use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 use Constants, only: Zero, One
 use stdalloc, only: mma_allocate, mma_deallocate
 implicit none
 private
 public :: ROMP2_Semi
 contains
-
-elemental logical function ROMP2_Is_Finite(x)
-  real(kind=wp), intent(in) :: x
-  ROMP2_Is_Finite = (x <= huge(x)) .and. (x >= -huge(x))
-end function ROMP2_Is_Finite
 
 subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
   integer(kind=iwp), intent(in) :: n,no,nFrozen
@@ -45,7 +41,7 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
     ierr=4
     return
   end if
-  if ((.not.all(ROMP2_Is_Finite(C))).or.(.not.all(ROMP2_Is_Finite(F)))) then
+  if ((.not.all(ieee_is_finite(C))).or.(.not.all(ieee_is_finite(F)))) then
     ierr=3
     return
   end if
@@ -89,7 +85,7 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
     do i=nFrozen+1,no
       do a=no+1,n
         den=eps(i)-eps(a)
-        if ((.not. ROMP2_Is_Finite(den)) .or. (abs(den)<=1.0e-12_wp)) then
+        if ((.not. ieee_is_finite(den)) .or. (abs(den)<=1.0e-12_wp)) then
           ierr=2
           exit
         end if
@@ -97,8 +93,8 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
       end do
       if (ierr/=0) exit
     end do
-    if (.not. all(ROMP2_Is_Finite(eps))) ierr=3
-    if (.not. ROMP2_Is_Finite(E1)) ierr=3
+    if (.not. all(ieee_is_finite(eps))) ierr=3
+    if (.not. ieee_is_finite(E1)) ierr=3
   end if
   call mma_deallocate(M)
   call mma_deallocate(Cnew)
