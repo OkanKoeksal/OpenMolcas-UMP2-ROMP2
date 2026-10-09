@@ -118,7 +118,7 @@ integer(kind=iwp) :: MPIFlag
   real(kind=wp), allocatable :: ERI(:,:,:,:),H(:,:),S(:,:),DA(:,:),DB(:,:),Buf(:),T(:,:),MA(:,:),MB(:,:)
   real(kind=wp) :: required,enuc,echeck,grad,oa,ob,pa,pb
   integer(kind=iwp) :: avail,integer_limit,np,rc,rc2,lu,comp,sym,opt,i,j,k,l,q,nmat,fs,fbasis(8),skip(8)
-  logical(kind=iwp) :: exists,square
+  logical(kind=iwp) :: exists,SquareFlag
   logical :: opened,oneopened
   character(len=8) :: label
   ierr=1
@@ -186,11 +186,11 @@ contains
     label='OneHam  '
     call RdOne(rc,opt,label,comp,Buf,sym)
     if (rc/=0) return
-    call Unpack(Buf,H)
+    call Square(Buf,H,nBas,1,nBas)
     label='Mltpl  0'
     call RdOne(rc,opt,label,comp,Buf,sym)
     if (rc/=0) return
-    call Unpack(Buf,S)
+    call Square(Buf,S,nBas,1,nBas)
     if (oneopened) then
       call ClsOne(rc,0)
       oneopened=.false.
@@ -237,7 +237,7 @@ contains
     call OpnOrd(rc,0,'ORDINT',lu)
     opened=.true.
     if (rc==0) then
-      call GetOrd(rc,square,fs,fbasis,skip)
+      call GetOrd(rc,SquareFlag,fs,fbasis,skip)
       if (rc==0) then
         if ((fs/=1).or.(fbasis(1)/=nBas).or.(skip(1)/=0)) rc=1
       end if
@@ -370,18 +370,5 @@ contains
   Message=''
   end subroutine BuildFockMatrices
 
-  subroutine Unpack(P,A)
-    real(kind=wp),intent(in) :: P(:)
-    real(kind=wp),intent(out) :: A(nBas,nBas)
-    integer(kind=iwp) :: x,y,z
-    z=0
-    do x=1,nBas
-      do y=1,x
-        z=z+1
-        A(x,y)=P(z)
-        A(y,x)=P(z)
-      end do
-    end do
-  end subroutine Unpack
 end subroutine ROMP2_Fock
 end module ROMP2_Reference
