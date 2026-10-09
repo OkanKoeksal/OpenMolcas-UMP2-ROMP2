@@ -159,17 +159,19 @@ end if
 
 ! Open-shell MP2 final energies require a fresh reference at the final
 ! geometry: UHF-SCF for UMP2 and determinant RASSCF/CASSCF for ROMP2.
-if ((Method(1:5) == 'MBPT2') .or. (Method(1:4) == 'UMP2') .or. (Method(1:5) == 'ROMP2')) then
-  if ((Method(1:4) == 'UMP2') .or. (Method(1:5) == 'ROMP2')) &
-    call Get_cArray('Relax Method',FinalMethod,8)
+if ((Method(1:5) == 'MBPT2') .or. &
+    (Method(1:4) == 'UMP2') .or. &
+    (Method(1:5) == 'ROMP2')) then
   if (Method(1:4) == 'UMP2') then
+    call Get_cArray('Relax Method',FinalMethod,8)
     if (FinalMethod(1:7) /= 'UHF-SCF') then
       write(u6,*) 'Last_Energy: UMP2 requires a UHF-SCF reference; actual method: ',FinalMethod
       call Abend()
     end if
   else if (Method(1:5) == 'ROMP2') then
+    call Get_cArray('Relax Method',FinalMethod,8)
     if ((FinalMethod(1:6) /= 'RASSCF') .and. (FinalMethod(1:6) /= 'CASSCF')) then
-      write(u6,*) 'Last_Energy: ROMP2 requires a determinant RASSCF reference; actual method: ',FinalMethod
+      write(u6,*) 'Last_Energy: ROMP2 requires a determinant RASSCF/CASSCF reference; actual method: ',FinalMethod
       call Abend()
     end if
   end if
@@ -181,14 +183,14 @@ if ((Method(1:5) == 'MBPT2') .or. (Method(1:4) == 'UMP2') .or. (Method(1:5) == '
     write(u6,*) 'MBPT2 returned with return code, rc = ',iReturn
     call Abend()
   end if
-  if ((Method(1:4) == 'UMP2') .or. (Method(1:5) == 'ROMP2')) &
-    call Get_cArray('Relax Method',FinalMethod,8)
   if (Method(1:4) == 'UMP2') then
+    call Get_cArray('Relax Method',FinalMethod,8)
     if (FinalMethod(1:4) /= 'UMP2') then
       write(u6,*) 'Last_Energy: MBPT2 did not produce a UMP2 energy; actual method: ',FinalMethod
       call Abend()
     end if
   else if (Method(1:5) == 'ROMP2') then
+    call Get_cArray('Relax Method',FinalMethod,8)
     if (FinalMethod(1:5) /= 'ROMP2') then
       write(u6,*) 'Last_Energy: MBPT2 did not produce a ROMP2 energy; actual method: ',FinalMethod
       call Abend()
