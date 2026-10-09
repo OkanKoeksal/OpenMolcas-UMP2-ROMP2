@@ -78,7 +78,7 @@ integer(kind=iwp) :: MPIFlag
     workers=nProcs
     rankid=MyRank
   end if
-  calculation: block
+  calculation: do
   call ReadReference(ierr)
   MPIFlag=0
   if (ierr/=0) MPIFlag=1
@@ -243,7 +243,8 @@ integer(kind=iwp) :: MPIFlag
     call Add_Info('E_MP2',[total],1,8)
   end if
   ireturn=_RC_ALL_IS_WELL_
-  end block calculation
+  exit calculation
+  end do calculation
   if (cho_open) call Cho_X_Final(rc)
   if ((ireturn/=_RC_ALL_IS_WELL_).and.((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) write(u6,'(A)') ' Symmetry MP2 error: '//trim(message)
   do g=1,8
@@ -539,7 +540,7 @@ integer(kind=iwp) :: MPIFlag
   ! Therefore every rank must open and read its local ORDINT contribution.
   ! Each packed AO-pair row is reconstructed by a global sum before it is
   ! copied into the replicated symmetry-block metric.
-  read_integrals: block
+  read_integrals: do
   rc=0
   call f_Inquire('ORDINT',exists)
   if ((.not.exists).or.AuxTwo%Opn) rc=1
@@ -604,7 +605,9 @@ integer(kind=iwp) :: MPIFlag
     end do
   end do
 
-  end block read_integrals
+  exit read_integrals
+
+  end do read_integrals
   rc2=0
   if (opened) then
     call ClsOrd(rc2)
@@ -764,7 +767,7 @@ integer(kind=iwp) :: MPIFlag
   rc=0
   opened=.false.
   if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
-    read_one_root: block
+    read_one_root: do
     if (.not.AuxOne%Opn) then
       call OpnOne(rc,0,'ONEINT',41)
       opened=.true.
@@ -798,7 +801,8 @@ integer(kind=iwp) :: MPIFlag
         end do
       end do
     end do
-    end block read_one_root
+    exit read_one_root
+    end do read_one_root
     if (opened) then
       call ClsOne(rc2,0)
       if (rc2/=0) rc=rc2
@@ -847,7 +851,7 @@ integer(kind=iwp) :: MPIFlag
   call mma_allocate(mat,nb,nb,label='symmetry MO Fock')
   call mma_allocate(vec,nb,nb,label='symmetry AO vector')
   call mma_allocate(exchange,nb,nb,label='symmetry exchange')
-  build_fock: block
+  build_fock: do
   call ReadOne(ierr)
   if (ierr/=0) exit build_fock
   ierr=1
@@ -974,7 +978,8 @@ integer(kind=iwp) :: MPIFlag
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) exit build_fock
   ierr=0
-  end block build_fock
+  exit build_fock
+  end do build_fock
   call mma_deallocate(work)
   call mma_deallocate(mat)
   call mma_deallocate(vec)
