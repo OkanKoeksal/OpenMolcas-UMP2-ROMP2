@@ -26,6 +26,7 @@
 module ROMP2_Conventional
 
 use Definitions, only: wp, iwp, u6, RtoB
+use Constants, only: Zero, One
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
 
 implicit none
@@ -65,9 +66,9 @@ subroutine ROMP2_Conventional_Energy(ierr,Message)
 
   ierr = 0
   Message = ''
-  EAA = 0.0_wp
-  EBB = 0.0_wp
-  EAB = 0.0_wp
+  EAA = Zero
+  EBB = Zero
+  EAB = Zero
   Opened = .false.
   Reported = .false.
   LuOrd = 43
@@ -109,9 +110,9 @@ subroutine ROMP2_Conventional_Energy(ierr,Message)
     Message = 'Nonfinite globally reduced conventional ROMP2 energy.'
   end if
   if (ierr /= 0) then
-    EAA = 0.0_wp
-    EBB = 0.0_wp
-    EAB = 0.0_wp
+    EAA = Zero
+    EBB = Zero
+    EAB = Zero
   end if
 
 contains
@@ -188,7 +189,7 @@ contains
       Message = 'Conventional ROMP2 requires a valid C1 reference.'
       return
     end if
-    if ((.not. ROMP2_Conv_Is_Finite(DenTol)) .or. (DenTol <= 0.0_wp)) then
+    if ((.not. ROMP2_Conv_Is_Finite(DenTol)) .or. (DenTol <= Zero)) then
       ierr = _RC_INPUT_ERROR_
       Message = 'Invalid ROMP2 denominator tolerance.'
       return
@@ -216,7 +217,7 @@ contains
     ! Use a variable integer limit so strict compilers do not diagnose the
     ! unavoidable loss of precision in converting HUGE(integer) to real.
     IntegerLimit = huge(nPair)
-    if (real(nBas,wp)*(real(nBas,wp)+1.0_wp) >= real(IntegerLimit,wp)) then
+    if (real(nBas,wp)*(real(nBas,wp)+One) >= real(IntegerLimit,wp)) then
       ierr = _RC_MEMORY_ERROR_
       Message = 'Conventional ROMP2 AO-pair dimensions exceed the integer range.'
       return
@@ -233,7 +234,7 @@ contains
     ! Include both phases plus space for reader buffers and library work.
     ! Evaluate products in real arithmetic BEFORE allocating dimensions.
     SizeHalf = real(nPair,wp)*real(nV,wp)*real(nO,wp)
-    PeakFirst = real(nPair,wp)+1.0_wp+real(nBas,wp)**2+ &
+    PeakFirst = real(nPair,wp)+One+real(nBas,wp)**2+ &
                 real(nBas,wp)*real(nO,wp)+real(nV,wp)*real(nO,wp)
     PeakSecond = real(nBas,wp)**2+real(nBas,wp)*real(MaxO,wp)+ &
                  real(MaxV,wp)*real(MaxO,wp)*real(nV,wp)
@@ -262,12 +263,12 @@ contains
     call mma_allocate(AO,nBas,nBas,label='ROMP2 AO pair matrix')
     call mma_allocate(Tmp,nBas,nO,label='ROMP2 first quarter')
     call mma_allocate(OV,nV,nO,label='ROMP2 first half row')
-    Half = 0.0_wp
+    Half = Zero
     iOpt = 1
     do q=1,nPair
       ! RdOrd_ uses (lBuf-1)/nPair to select the number of complete rows.
       ! Read the stored path directly, avoiding RdOrd's saved route flag.
-      Buf = 0.0_wp
+      Buf = Zero
       if (Reader) then
         call RdOrd_(ReadRC,iOpt,1,1,1,1,Buf,nPair+1,nMat)
         iOpt = 2
@@ -285,8 +286,8 @@ contains
       if (Parallel) call GADGOp(Buf,nPair,'+')
       if (mod(q-1,Workers) == WorkRank) then
         call UnpackPair(Buf(1:nPair),AO,nBas)
-        call DGEMM_('N','N',nBas,nO,nBas,1.0_wp,AO,nBas,C(1,nFro+1),nBas,0.0_wp,Tmp,nBas)
-        call DGEMM_('T','N',nV,nO,nBas,1.0_wp,C(1,nOcc+1),nBas,Tmp,nBas,0.0_wp,OV,nV)
+        call DGEMM_('N','N',nBas,nO,nBas,One,AO,nBas,C(1,nFro+1),nBas,Zero,Tmp,nBas)
+        call DGEMM_('T','N',nV,nO,nBas,One,C(1,nOcc+1),nBas,Tmp,nBas,Zero,OV,nV)
         if (.not. all(ROMP2_Conv_Is_Finite(OV))) then
           ierr = _RC_GENERAL_ERROR_
           Message = 'Nonfinite conventional half-transformed integrals.'
@@ -323,7 +324,7 @@ contains
     real(kind=wp) :: Den, Numer
     real(kind=wp), allocatable :: AO(:,:), Tmp(:,:), G(:,:,:)
 
-    Energy = 0.0_wp
+    Energy = Zero
     call mma_allocate(AO,nBas,nBas,label='ROMP2 second AO matrix')
     call mma_allocate(Tmp,nBas,nO,label='ROMP2 third quarter')
     call mma_allocate(G,nV,nO,nVR,label='ROMP2 occupied slice')
@@ -334,8 +335,8 @@ contains
       if (mod(j-1,Workers) /= WorkRank) cycle
       do b=1,nVR
         call UnpackPair(Half(:,b,j),AO,nBas)
-        call DGEMM_('N','N',nBas,nO,nBas,1.0_wp,AO,nBas,C(1,nFro+1),nBas,0.0_wp,Tmp,nBas)
-        call DGEMM_('T','N',nV,nO,nBas,1.0_wp,C(1,nOcc+1),nBas,Tmp,nBas,0.0_wp,G(1,1,b),nV)
+        call DGEMM_('N','N',nBas,nO,nBas,One,AO,nBas,C(1,nFro+1),nBas,Zero,Tmp,nBas)
+        call DGEMM_('T','N',nV,nO,nBas,One,C(1,nOcc+1),nBas,Tmp,nBas,Zero,G(1,1,b),nV)
       end do
       if (.not. all(ROMP2_Conv_Is_Finite(G))) then
         ierr = _RC_GENERAL_ERROR_

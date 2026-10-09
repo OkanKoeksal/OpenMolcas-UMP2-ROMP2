@@ -15,6 +15,7 @@ module ROMP2_Cholesky
 ! Serial/MPI C1 Cholesky lifecycle shared by the reference-Fock and doubles
 ! stages. AO vectors are streamed twice: no four-index AO tensor is built.
 use Definitions, only: wp,iwp,u6,RtoB
+use Constants, only: Zero, One, Two, Three
 use Para_Info, only: nProcs,MyRank
 use ROMP2_Parallel
 use Data_Structures, only: SBA_Type,Allocate_DT,Deallocate_DT
@@ -54,7 +55,7 @@ subroutine ROMP2_Cho_Open(ierr,Message)
     Message='ROMP2 Cholesky interface is already initialized.'
     return
   end if
-  call Cho_X_Init(ierr,0.0_wp)
+  call Cho_X_Init(ierr,Zero)
   if (ROMP2_Any(ierr/=0)) then
     ! A partial initialization must not finalize on only a subset of ranks.
     Message='ROMP2 Cho_X_Init failed on at least one rank.'
@@ -152,7 +153,7 @@ subroutine ReadVector(iVec,ierr,Message)
   ierr=1
   Message='Nonfinite ROMP2 AO Cholesky vector.'
   if (.not.all(ROMP2_Cho_Is_Finite(AO%SB(1)%A3))) return
-  Scale=max(1.0_wp,maxval(abs(AO%SB(1)%A3(:,:,1))))
+  Scale=max(One,maxval(abs(AO%SB(1)%A3(:,:,1))))
   Message='ROMP2 AO Cholesky vector is not a full symmetric matrix.'
   if (maxval(abs(AO%SB(1)%A3(:,:,1)-transpose(AO%SB(1)%A3(:,:,1))))>1.0e-12_wp*Scale) return
   ierr=0
@@ -175,7 +176,7 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
   Message='ROMP2 Cholesky interface is not initialized for Fock construction.'
   if (ROMP2_Any((.not.ChoReady).or.(.not.HaveAO))) return
   call mma_maxDBLE(Available)
-  if (ROMP2_Any(2.0_wp*real(nBas,wp)**2>0.75_wp*real(Available,wp))) then
+  if (ROMP2_Any(Two*real(nBas,wp)**2>0.75_wp*real(Available,wp))) then
     Message='Insufficient memory for ROMP2 Cholesky Fock work arrays.'
     return
   end if
@@ -183,8 +184,8 @@ subroutine ROMP2_Cho_Fock(DA,DB,FA,FB,ierr,Message)
   call mma_allocate(Exchange,nBas,nBas,label='ROMP2 Cholesky exchange')
   ! H is present only on root, so the reduction includes it exactly once.
   if (.not.ROMP2_IsRoot()) then
-    FA=0.0_wp
-    FB=0.0_wp
+    FA=Zero
+    FB=Zero
   end if
   ierr=0
   iRedC=-1
@@ -239,7 +240,7 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
     Message='ROMP2 transformed vectors exceed supported integer indexing range.'
     return
   end if
-  Required=NAElements+NBElements+3.0_wp*real(nBas,wp)*real(max(1,nOA,nOB),wp)
+  Required=NAElements+NBElements+Three*real(nBas,wp)*real(max(1,nOA,nOB),wp)
   call mma_maxDBLE(Available)
   if (ROMP2_Any(Required>0.75_wp*real(Available,wp))) then
     Message='Insufficient memory for in-core ROMP2 occupied-virtual Cholesky vectors.'
@@ -247,8 +248,8 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
   end if
   call mma_allocate(La,nVA,nOA,nGlobal,label='ROMP2 alpha OV Cholesky')
   call mma_allocate(Lb,nVB,nOB,nGlobal,label='ROMP2 beta OV Cholesky')
-  La=0.0_wp
-  Lb=0.0_wp
+  La=Zero
+  Lb=Zero
   ierr=0
   iRedC=-1
   do iVec=1,nVec

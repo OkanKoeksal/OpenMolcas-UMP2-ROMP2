@@ -13,6 +13,7 @@
 
 subroutine ROMP2_Driver(ireturn)
 use Definitions, only: wp,iwp,u6
+use Constants, only: Zero
 use UMP2_Global
 use ROMP2_Parallel
 use Para_Info, only: MyRank
@@ -65,8 +66,8 @@ call ROMP2_SyncError(ierr,Message)
 if (ierr/=0) return
 ! Root diagonalizes once: every rank must use the same orbital gauge.
 ierr=0
-E1A=0.0_wp
-E1B=0.0_wp
+E1A=Zero
+E1B=Zero
 if (ROMP2_IsRoot()) then
   call ROMP2_Semi(CAlpha,FA,nBas,nOccA,nFro,EOrbA,E1A,ierr)
   if (ierr/=0) then
@@ -80,10 +81,10 @@ call ROMP2_SyncError(ierr,Message)
 if (ierr/=0) return
 if (ROMP2_IsParallel()) then
   if (MyRank/=0) then
-    CAlpha=0.0_wp
-    CBeta=0.0_wp
-    EOrbA=0.0_wp
-    EOrbB=0.0_wp
+    CAlpha=Zero
+    CBeta=Zero
+    EOrbA=Zero
+    EOrbB=Zero
   end if
   call GADGOp(CAlpha(1,1),size(CAlpha),'+')
   call GADGOp(CBeta(1,1),size(CBeta),'+')

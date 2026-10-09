@@ -16,6 +16,7 @@ subroutine UMP2_Energy(La,Lb,Eoa,Eva,Eob,Evb, &
                        Eaa,Ebb,Eab,ierr)
 
 use Definitions, only: wp, iwp
+use Constants, only: Zero
 use Para_Info, only: nProcs, MyRank, Is_Real_Par
 
 implicit none
@@ -35,15 +36,15 @@ integer(kind=iwp) :: i,j,a,b,PairIndex,LocalErr
 real(kind=wp) :: Coul,Den,WorkE(3)
 logical :: Parallel
 
-Eaa = 0.0_wp
-Ebb = 0.0_wp
-Eab = 0.0_wp
+Eaa = Zero
+Ebb = Zero
+Eab = Zero
 ierr = 0
 LocalErr = 0
 Parallel = (nProcs > 1) .and. Is_Real_Par()
 
 ! A positive denominator tolerance must be supplied.
-if (DenTol <= 0.0_wp) LocalErr = 1
+if (DenTol <= Zero) LocalErr = 1
 
 if (LocalErr == 0) then
   call SameSpin(La,Eoa,Eva,nOA,nVA,Eaa,LocalErr)
@@ -123,7 +124,7 @@ subroutine SameSpin(L,Eo,Ev,nO,nV,Ess,Err)
   integer(kind=iwp) :: ii,jj,aa,bb,Pair
   real(kind=wp) :: Jint,Kint,Delta,Anti
 
-  Ess = 0.0_wp
+  Ess = Zero
 
   ! No same-spin double excitations in these cases.
   if ((nO < 2) .or. (nV < 2)) return
@@ -164,9 +165,9 @@ end subroutine SameSpin
 
 subroutine ClearEnergies()
 
-  Eaa = 0.0_wp
-  Ebb = 0.0_wp
-  Eab = 0.0_wp
+  Eaa = Zero
+  Ebb = Zero
+  Eab = Zero
 
 end subroutine ClearEnergies
 

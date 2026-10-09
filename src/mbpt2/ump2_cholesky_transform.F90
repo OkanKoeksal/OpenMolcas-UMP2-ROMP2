@@ -14,6 +14,7 @@
 module UMP2_Cholesky_Transform
 
 use Definitions, only: wp, iwp
+use Constants, only: Zero, One
 use stdalloc, only: mma_allocate, mma_deallocate
 use linalg_mod, only: mult
 use UMP2_Global, only: nSym, nBas, nOrb, nOccA, nOccB, &
@@ -80,8 +81,8 @@ subroutine UMP2_Transform_AO_Batch(LAO,La,Lb,ierr,Message)
   ierr = 0
   Message = ''
 
-  La = 0.0_wp
-  Lb = 0.0_wp
+  La = Zero
+  Lb = Zero
 
   if (nSym /= 1) then
     call Fail('UMP2 transformation requires C1 symmetry.')
@@ -176,7 +177,7 @@ subroutine UMP2_Transform_AO_Batch(LAO,La,Lb,ierr,Message)
 
   do iVec=1,nVec
 
-    Scale = max(1.0_wp,maxval(abs(LAO(:,:,iVec))))
+    Scale = max(One,maxval(abs(LAO(:,:,iVec))))
     Asymmetry = maxval(abs(LAO(:,:,iVec)- &
                           transpose(LAO(:,:,iVec))))
 
@@ -270,8 +271,8 @@ contains
 
     ! Never leave partially transformed output on a detected error.
 
-    La = 0.0_wp
-    Lb = 0.0_wp
+    La = Zero
+    Lb = Zero
 
   end subroutine Fail
 

@@ -14,6 +14,7 @@
 module UMP2_Global
 
 use Definitions, only: wp, iwp
+use Constants, only: Zero
 
 implicit none
 private
@@ -140,12 +141,12 @@ real(kind=wp), allocatable :: EVirB(:)
 ! EnergyReady must remain false unless evaluation succeeds.
 ! Zero-initialized energies must not be treated as valid results.
 
-real(kind=wp) :: ESCF = 0.0_wp
-real(kind=wp) :: EAA = 0.0_wp
-real(kind=wp) :: EBB = 0.0_wp
-real(kind=wp) :: EAB = 0.0_wp
-real(kind=wp) :: ECorr = 0.0_wp
-real(kind=wp) :: ETotal = 0.0_wp
+real(kind=wp) :: ESCF = Zero
+real(kind=wp) :: EAA = Zero
+real(kind=wp) :: EBB = Zero
+real(kind=wp) :: EAB = Zero
+real(kind=wp) :: ECorr = Zero
+real(kind=wp) :: ETotal = Zero
 
 logical(kind=iwp) :: EnergyReady = .false.
 
@@ -200,12 +201,12 @@ subroutine UMP2_Clean()
 
   DenTol = 1.0e-12_wp
 
-  ESCF = 0.0_wp
-  EAA = 0.0_wp
-  EBB = 0.0_wp
-  EAB = 0.0_wp
-  ECorr = 0.0_wp
-  ETotal = 0.0_wp
+  ESCF = Zero
+  EAA = Zero
+  EBB = Zero
+  EAB = Zero
+  ECorr = Zero
+  ETotal = Zero
 
   EnergyReady = .false.
 

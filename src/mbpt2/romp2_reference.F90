@@ -13,6 +13,7 @@
 
 module ROMP2_Reference
 use Definitions, only: wp, iwp, u6
+use Constants, only: Zero, One, Half
 use UMP2_Global
 use ROMP2_Parallel
 use Para_Info, only: nProcs,MyRank
@@ -167,8 +168,8 @@ contains
   subroutine BuildFockMatrices()
   ! ONEINT and ORDINT I/O are local in the Molcas reader layer.
   ! Root is the sole file reader: distribute complete data explicitly.
-  H=0.0_wp
-  S=0.0_wp
+  H=Zero
+  S=Zero
   rc=0
   if (ROMP2_IsRoot()) call ReadOneMatrices()
   if (ROMP2_Any(rc/=0)) return
@@ -176,10 +177,10 @@ contains
     call GADGOp(H(1,1),size(H),'+')
     call GADGOp(S(1,1),size(S),'+')
   end if
-  call DGEMM_('N','N',nBas,nBas,nBas,1.0_wp,S,nBas,CAlpha,nBas,0.0_wp,T,nBas)
-  call DGEMM_('T','N',nBas,nBas,nBas,1.0_wp,CAlpha,nBas,T,nBas,0.0_wp,MA,nBas)
+  call DGEMM_('N','N',nBas,nBas,nBas,One,S,nBas,CAlpha,nBas,Zero,T,nBas)
+  call DGEMM_('T','N',nBas,nBas,nBas,One,CAlpha,nBas,T,nBas,Zero,MA,nBas)
   do i=1,nBas
-    MA(i,i)=MA(i,i)-1.0_wp
+    MA(i,i)=MA(i,i)-One
   end do
   if (ROMP2_Any(logical( &
       (.not.all(ROMP2_Ref_Is_Finite(MA))).or.(maxval(abs(MA))>1.0e-7_wp), &
@@ -205,7 +206,7 @@ contains
     opt=1
     do i=1,nBas
       do j=1,i
-        Buf=0.0_wp
+        Buf=Zero
         rc=0
         call RdOrd_(rc,opt,1,1,1,1,Buf,np+1,nmat)
         opt=2
@@ -234,8 +235,8 @@ contains
     end if
     if (ROMP2_Any(rc/=0)) return
   end if
-  call DGEMM_('N','T',nBas,nBas,nOccA,1.0_wp,CAlpha,nBas,CAlpha,nBas,0.0_wp,DA,nBas)
-  call DGEMM_('N','T',nBas,nBas,nOccB,1.0_wp,CBeta,nBas,CBeta,nBas,0.0_wp,DB,nBas)
+  call DGEMM_('N','T',nBas,nBas,nOccA,One,CAlpha,nBas,CAlpha,nBas,Zero,DA,nBas)
+  call DGEMM_('N','T',nBas,nBas,nOccB,One,CBeta,nBas,CBeta,nBas,Zero,DB,nBas)
   FA=H
   FB=H
   if (DoCholesky) then
@@ -244,8 +245,8 @@ contains
   else
     ! Include H once, then distribute matrix-element contractions.
     if (.not.ROMP2_IsRoot()) then
-      FA=0.0_wp
-      FB=0.0_wp
+      FA=Zero
+      FB=Zero
     end if
     do j=1,nBas
       do i=1,nBas
@@ -269,7 +270,7 @@ contains
       (.not.all(ROMP2_Ref_Is_Finite(FA))).or.(.not.all(ROMP2_Ref_Is_Finite(FB))), &
       kind=kind(.true.)))) return
   call Get_dScalar('PotNuc',enuc)
-  echeck=enuc+0.5_wp*(sum(DA*(H+FA))+sum(DB*(H+FB)))
+  echeck=enuc+Half*(sum(DA*(H+FA))+sum(DB*(H+FB)))
   if (ROMP2_Any(logical( &
       (.not.ROMP2_Ref_Is_Finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp), &
       kind=kind(.true.)))) then
@@ -280,21 +281,21 @@ contains
     Message='ROHF determinant energy does not match RASSCF: check reference and Hamiltonian.'
     return
   end if
-  call DGEMM_('N','N',nBas,nBas,nBas,1.0_wp,FA,nBas,CAlpha,nBas,0.0_wp,T,nBas)
-  call DGEMM_('T','N',nBas,nBas,nBas,1.0_wp,CAlpha,nBas,T,nBas,0.0_wp,MA,nBas)
-  call DGEMM_('N','N',nBas,nBas,nBas,1.0_wp,FB,nBas,CAlpha,nBas,0.0_wp,T,nBas)
-  call DGEMM_('T','N',nBas,nBas,nBas,1.0_wp,CAlpha,nBas,T,nBas,0.0_wp,MB,nBas)
-  grad=0.0_wp
+  call DGEMM_('N','N',nBas,nBas,nBas,One,FA,nBas,CAlpha,nBas,Zero,T,nBas)
+  call DGEMM_('T','N',nBas,nBas,nBas,One,CAlpha,nBas,T,nBas,Zero,MA,nBas)
+  call DGEMM_('N','N',nBas,nBas,nBas,One,FB,nBas,CAlpha,nBas,Zero,T,nBas)
+  call DGEMM_('T','N',nBas,nBas,nBas,One,CAlpha,nBas,T,nBas,Zero,MB,nBas)
+  grad=Zero
   do i=1,nBas
-    oa=0.0_wp
-    ob=0.0_wp
-    if (i<=nOccA) oa=1.0_wp
-    if (i<=nOccB) ob=1.0_wp
+    oa=Zero
+    ob=Zero
+    if (i<=nOccA) oa=One
+    if (i<=nOccB) ob=One
     do j=1,nBas
-      pa=0.0_wp
-      pb=0.0_wp
-      if (j<=nOccA) pa=1.0_wp
-      if (j<=nOccB) pb=1.0_wp
+      pa=Zero
+      pb=Zero
+      if (j<=nOccA) pa=One
+      if (j<=nOccB) pb=One
       grad=max(grad,abs((oa-pa)*MA(i,j)+(ob-pb)*MB(i,j)))
     end do
   end do

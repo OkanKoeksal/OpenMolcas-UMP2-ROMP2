@@ -13,6 +13,7 @@
 
 module ROMP2_Semicanonical
 use Definitions, only: wp, iwp
+use Constants, only: Zero, One
 use stdalloc, only: mma_allocate, mma_deallocate
 implicit none
 private
@@ -34,8 +35,8 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
   real(kind=wp) :: den
   integer(kind=iwp) :: k,first,last,nBlock,info,i,a
   ierr=0
-  E1=0.0_wp
-  eps=0.0_wp
+  E1=Zero
+  eps=Zero
   ! Frozen-core convention: diagonalize the FULL occupied block first,
   ! then exclude its nFrozen lowest eigenvectors from correlation.
   ! Alpha and beta frozen subspaces may differ after semicanonicalization.
@@ -51,8 +52,8 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
   call mma_allocate(M,n,n,label='ROMP2 MO Fock')
   call mma_allocate(Cnew,n,n,label='ROMP2 rotated orbitals')
   call mma_allocate(T,n,n,label='ROMP2 Fock work')
-  call DGEMM_('N','N',n,n,n,1.0_wp,F,n,C,n,0.0_wp,T,n)
-  call DGEMM_('T','N',n,n,n,1.0_wp,C,n,T,n,0.0_wp,M,n)
+  call DGEMM_('N','N',n,n,n,One,F,n,C,n,Zero,T,n)
+  call DGEMM_('T','N',n,n,n,One,C,n,T,n,Zero,M,n)
   ! Diagonalize each spin's occupied and virtual blocks separately.
   ! No occupied/virtual mixing is permitted: the determinant is preserved.
   do k=1,2
@@ -75,14 +76,14 @@ subroutine ROMP2_Semi(C,F,n,no,nFrozen,eps,E1,ierr)
       call mma_deallocate(W)
       exit
     end if
-    call DGEMM_('N','N',n,nBlock,nBlock,1.0_wp,C(1,first),n,U,nBlock,0.0_wp,Cnew(1,first),n)
+    call DGEMM_('N','N',n,nBlock,nBlock,One,C(1,first),n,U,nBlock,Zero,Cnew(1,first),n)
     call mma_deallocate(U)
     call mma_deallocate(W)
   end do
   if (ierr==0) then
     C=Cnew
-    call DGEMM_('N','N',n,n,n,1.0_wp,F,n,C,n,0.0_wp,T,n)
-    call DGEMM_('T','N',n,n,n,1.0_wp,C,n,T,n,0.0_wp,M,n)
+    call DGEMM_('N','N',n,n,n,One,F,n,C,n,Zero,T,n)
+    call DGEMM_('T','N',n,n,n,One,C,n,T,n,Zero,M,n)
     ! Core electrons remain in the ROHF density/Fock/reference energy.
     ! Only their correlation excitations are excluded, including singles.
     do i=nFrozen+1,no

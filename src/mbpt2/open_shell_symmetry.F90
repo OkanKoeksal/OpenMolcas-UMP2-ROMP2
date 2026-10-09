@@ -17,6 +17,7 @@ module Open_Shell_Symmetry
 ! Conventional metrics and transformed vectors are replicated; computation
 ! is distributed. This is an in-core implementation, with memory checks.
 use Definitions, only: wp,iwp,u6,RtoB
+use Constants, only: Zero, One, Three, Four, Five, Half
 use Symmetry_Info, only: Mul
 use Para_Info, only: nProcs,MyRank
 use ROMP2_Parallel, only: ROMP2_Any,ROMP2_IsRoot,ROMP2_IsParallel,ROMP2_SyncError
@@ -84,7 +85,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
     call ReadConventional(ierr)
   end if
   if (ierr/=0) exit calculation
-  singles=0.0_wp
+  singles=Zero
   if (restricted) then
     call ReferenceFock(ierr)
     if (ierr/=0) exit calculation
@@ -119,9 +120,9 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
     if (ierr/=0) exit calculation
     if (ROMP2_IsParallel()) then
       if (.not.ROMP2_IsRoot()) then
-        coeff=0.0_wp
-        eps=0.0_wp
-        singles=0.0_wp
+        coeff=Zero
+        eps=Zero
+        singles=Zero
       end if
       call GADGOp(coeff(1,1,1),size(coeff),'+')
       call GADGOp(eps(1,1),size(eps),'+')
@@ -321,7 +322,7 @@ subroutine ReadReference(ierr)
   if (any(occ(1:ns,1)>bs(1:ns)).or.any(occ(1:ns,2)>bs(1:ns))) return
   nb=sum(bs(1:ns))
   if (nb<=0) return
-  if (.not.MemoryOK(5.0_wp*real(nb,wp)**2+3.0_wp*real(nb,wp))) return
+  if (.not.MemoryOK(Five*real(nb,wp)**2+Three*real(nb,wp))) return
   off=0
   do s=2,ns
     off(s)=off(s-1)+bs(s-1)
@@ -329,8 +330,8 @@ subroutine ReadReference(ierr)
   call mma_allocate(coeff,nb,nb,2,label='symmetry MO coefficients')
   call mma_allocate(eps,nb,2,label='symmetry MO energies')
   call mma_allocate(symorb,nb,label='orbital irreps')
-  coeff=0.0_wp
-  eps=0.0_wp
+  coeff=Zero
+  eps=Zero
   do s=1,ns
     symorb(off(s)+1:off(s)+bs(s))=s
   end do
@@ -376,12 +377,12 @@ subroutine SynchronizeReference()
   ! this routine is used only by the non-C1 symmetry path.
   real(kind=wp) :: scalar(1)
   if (.not.ROMP2_IsParallel()) return
-  scalar=0.0_wp
+  scalar=Zero
   if (ROMP2_IsRoot()) then
     scalar(1)=eref
   else
-    coeff=0.0_wp
-    eps=0.0_wp
+    coeff=Zero
+    eps=Zero
   end if
   call GADGOp(coeff(1,1,1),size(coeff),'+')
   call GADGOp(eps(1,1),size(eps),'+')
@@ -461,7 +462,7 @@ subroutine MakePairs(ierr)
   integer(kind=iwp),intent(out) :: ierr
   integer(kind=iwp) :: g,s,t,i,j,p,a,spin,mu,nu
   ierr=1
-  if (.not.MemoryOK(5.0_wp*real(nb,wp)**2)) return
+  if (.not.MemoryOK(Five*real(nb,wp)**2)) return
   call mma_allocate(pairindex,nb,nb,label='AO pair map')
   call mma_allocate(qindex,nb,nb,2,label='OV pair map')
   pairindex=0
@@ -537,14 +538,14 @@ subroutine ReadConventional(ierr)
   real(kind=wp) :: needed
   ierr=1
   opened=.false.
-  needed=0.0_wp
+  needed=Zero
   do g=1,ns
     needed=needed+real(blocks(g)%np,wp)**2
   end do
-  if (.not.MemoryOK(needed+real(nb,wp)**2+4.0_wp)) return
+  if (.not.MemoryOK(needed+real(nb,wp)**2+Four)) return
   do g=1,ns
     call mma_allocate(blocks(g)%metric,blocks(g)%np,blocks(g)%np,label='symmetry AO pair metric')
-    blocks(g)%metric=0.0_wp
+    blocks(g)%metric=Zero
   end do
   call mma_allocate(buffer,nb*nb+1,label='ORDINT symmetry row')
 
@@ -586,7 +587,7 @@ subroutine ReadConventional(ierr)
         q0=pairindex(off(u)+1,off(v)+1)-1
         opt=1
         do p=1,np
-          buffer=0.0_wp
+          buffer=Zero
           rc=0
           call RdOrd_(rc,opt,s,t,u,v,buffer,nq+1,nmat)
           opt=2
@@ -633,7 +634,7 @@ subroutine ReadCholesky(ierr,initialized)
   type(SBA_Type),target :: ao
 #include "warnings.h"
   initialized=.false.
-  call Cho_X_Init(rc,0.0_wp)
+  call Cho_X_Init(rc,Zero)
   if (ROMP2_Any(rc/=0)) then
     ! Initialization can fail partially: do not finalize on a subset.
     call Quit(_RC_CHO_INI_)
@@ -663,7 +664,7 @@ subroutine ReadCholesky(ierr,initialized)
       total_count=total_count+counts(s,j)
     end do
   end do
-  needed=0.0_wp
+  needed=Zero
   do g=1,ns
     blocks(g)%nlocal=counts(g,rankid+1)
     blocks(g)%nglobal=sum(counts(g,:))
@@ -732,8 +733,8 @@ subroutine ReadOne(ierr)
   character(len=8) :: label
   np=sum(bs(1:ns)*(bs(1:ns)+1)/2)
   call mma_allocate(buffer,np+4,label='symmetry ONEINT buffer')
-  hcore=0.0_wp
-  overlap=0.0_wp
+  hcore=Zero
+  overlap=Zero
   rc=0
   opened=.false.
   if (ROMP2_IsRoot()) then
@@ -791,7 +792,7 @@ end subroutine ReadOne
 real(kind=wp) function AOIntegral(i,j,k,l) result(value)
   integer(kind=iwp),intent(in) :: i,j,k,l
   integer(kind=iwp) :: g
-  value=0.0_wp
+  value=Zero
   g=Mul(symorb(i),symorb(j))
   if (g/=Mul(symorb(k),symorb(l))) return
   value=blocks(g)%metric(pairindex(i,j),pairindex(k,l))
@@ -803,7 +804,7 @@ subroutine ReferenceFock(ierr)
   real(kind=wp),allocatable :: work(:,:),mat(:,:),vec(:,:),exchange(:,:)
   real(kind=wp) :: charge,enuc,check,grad,oi,oj
   ierr=1
-  if (.not.MemoryOK(11.0_wp*real(nb,wp)**2+4.0_wp)) return
+  if (.not.MemoryOK(11.0_wp*real(nb,wp)**2+Four)) return
   call mma_allocate(hcore,nb,nb,label='symmetry core Hamiltonian')
   call mma_allocate(overlap,nb,nb,label='symmetry overlap')
   call mma_allocate(density,nb,nb,2,label='symmetry spin densities')
@@ -816,28 +817,28 @@ subroutine ReferenceFock(ierr)
   call ReadOne(ierr)
   if (ierr/=0) exit build_fock
   ierr=1
-  density=0.0_wp
+  density=Zero
   ! Overlap validation and densities are independently symmetry-blocked.
-  grad=0.0_wp
+  grad=Zero
   do s=1,ns
     n=bs(s)
     if (n==0) cycle
     first=off(s)+1
     last=off(s)+n
-    call DGEMM_('N','N',n,n,n,1.0_wp,overlap(first,first),nb,coeff(first,first,1),nb,0.0_wp,work,nb)
-    call DGEMM_('T','N',n,n,n,1.0_wp,coeff(first,first,1),nb,work,nb,0.0_wp,mat,nb)
+    call DGEMM_('N','N',n,n,n,One,overlap(first,first),nb,coeff(first,first,1),nb,Zero,work,nb)
+    call DGEMM_('T','N',n,n,n,One,coeff(first,first,1),nb,work,nb,Zero,mat,nb)
     do i=1,n
-      mat(i,i)=mat(i,i)-1.0_wp
+      mat(i,i)=mat(i,i)-One
     end do
     grad=max(grad,maxval(abs(mat(1:n,1:n))))
     do spin=1,2
-      call DGEMM_('N','T',n,n,occ(s,spin),1.0_wp,coeff(first,first,spin),nb, &
-                  coeff(first,first,spin),nb,0.0_wp,density(first,first,spin),nb)
+      call DGEMM_('N','T',n,n,occ(s,spin),One,coeff(first,first,spin),nb, &
+                  coeff(first,first,spin),nb,Zero,density(first,first,spin),nb)
     end do
   end do
   message='Symmetry ROHF orbitals are not orthonormal.'
   if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.)))) exit build_fock
-  fock=0.0_wp
+  fock=Zero
   if (ROMP2_IsRoot()) then
     fock(:,:,1)=hcore
     fock(:,:,2)=hcore
@@ -845,7 +846,7 @@ subroutine ReferenceFock(ierr)
   if (cho) then
     do g=1,ns
       do v=1,blocks(g)%nlocal
-        vec=0.0_wp
+        vec=Zero
         do p=1,blocks(g)%np
           mu=blocks(g)%mu(p)
           nu=blocks(g)%nu(p)
@@ -866,8 +867,8 @@ subroutine ReferenceFock(ierr)
           last=off(s)+n
           other=off(t)+1
           do spin=1,2
-            call DGEMM_('N','N',n,m,m,1.0_wp,vec(first,other),nb,density(other,other,spin),nb,0.0_wp,work,nb)
-            call DGEMM_('N','T',n,n,m,1.0_wp,work,nb,vec(first,other),nb,0.0_wp,exchange,nb)
+            call DGEMM_('N','N',n,m,m,One,vec(first,other),nb,density(other,other,spin),nb,Zero,work,nb)
+            call DGEMM_('N','T',n,n,m,One,work,nb,vec(first,other),nb,Zero,exchange,nb)
             fock(first:last,first:last,spin)=fock(first:last,first:last,spin)-exchange(1:n,1:n)
           end do
         end do
@@ -898,26 +899,26 @@ subroutine ReferenceFock(ierr)
   message='Nonfinite symmetry reference Fock matrix.'
   if (ROMP2_Any(logical(.not.all(Open_Shell_Is_Finite(fock)),kind=kind(.true.)))) exit build_fock
   call Get_dScalar('PotNuc',enuc)
-  check=enuc+0.5_wp*(sum(density(:,:,1)*(hcore+fock(:,:,1)))+sum(density(:,:,2)*(hcore+fock(:,:,2))))
+  check=enuc+Half*(sum(density(:,:,1)*(hcore+fock(:,:,1)))+sum(density(:,:,2)*(hcore+fock(:,:,2))))
   message='Reconstructed symmetry ROHF energy differs from RASSCF.'
   if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(check)).or.(abs(check-eref)>1.0e-7_wp), &
                        kind=kind(.true.)))) exit build_fock
   ! Stationarity test in the shared spatial ROHF basis, before rotation.
-  grad=0.0_wp
-  vec=0.0_wp
+  grad=Zero
+  vec=Zero
   do s=1,ns
     n=bs(s)
     if (n==0) cycle
     first=off(s)+1
     do spin=1,2
-      call DGEMM_('N','N',n,n,n,1.0_wp,fock(first,first,spin),nb,coeff(first,first,1),nb,0.0_wp,work,nb)
-      call DGEMM_('T','N',n,n,n,1.0_wp,coeff(first,first,1),nb,work,nb,0.0_wp,mat,nb)
+      call DGEMM_('N','N',n,n,n,One,fock(first,first,spin),nb,coeff(first,first,1),nb,Zero,work,nb)
+      call DGEMM_('T','N',n,n,n,One,coeff(first,first,1),nb,work,nb,Zero,mat,nb)
       do i=1,n
-        oi=0.0_wp
-        if (i<=occ(s,spin)) oi=1.0_wp
+        oi=Zero
+        if (i<=occ(s,spin)) oi=One
         do j=1,n
-          oj=0.0_wp
-          if (j<=occ(s,spin)) oj=1.0_wp
+          oj=Zero
+          if (j<=occ(s,spin)) oj=One
           vec(off(s)+i,off(s)+j)=vec(off(s)+i,off(s)+j)+(oi-oj)*mat(i,j)
         end do
       end do
@@ -953,7 +954,7 @@ subroutine TransformPairs(ierr)
     end if
     if (.not.MemoryOK(required)) return
     call mma_allocate(projection,np,nq,label='symmetry AO to OV projection')
-    projection=0.0_wp
+    projection=Zero
     do q=1,nq
       i=blocks(g)%qi(q)
       a=blocks(g)%qa(q)
@@ -970,11 +971,11 @@ subroutine TransformPairs(ierr)
     end do
     if (cho) then
       call mma_allocate(blocks(g)%projected,nq,nglobal,label='global symmetry OV vectors')
-      blocks(g)%projected=0.0_wp
+      blocks(g)%projected=Zero
       start=blocks(g)%voff+1
       if ((np>0).and.(nq>0).and.(nlocal>0)) then
-        call DGEMM_('T','N',nq,nlocal,np,1.0_wp,projection,np,blocks(g)%vectors,np, &
-                    0.0_wp,blocks(g)%projected(1,start),nq)
+        call DGEMM_('T','N',nq,nlocal,np,One,projection,np,blocks(g)%vectors,np, &
+                    Zero,blocks(g)%projected(1,start),nq)
       end if
       if (ROMP2_IsParallel().and.(nq*nglobal>0)) then
         call GADGOp(blocks(g)%projected(1,1),size(blocks(g)%projected),'+')
@@ -983,12 +984,12 @@ subroutine TransformPairs(ierr)
     else
       call mma_allocate(blocks(g)%kernel,nq,nq,label='symmetry OV integral kernel')
       call mma_allocate(work,np,1,label='symmetry metric projection')
-      blocks(g)%kernel=0.0_wp
+      blocks(g)%kernel=Zero
       if ((np>0).and.(nq>0)) then
         do q=1,nq
           if (mod(q-1,workers)/=rankid) cycle
-          call DGEMM_('N','N',np,1,np,1.0_wp,blocks(g)%metric,np,projection(1,q),np,0.0_wp,work,np)
-          call DGEMM_('T','N',nq,1,np,1.0_wp,projection,np,work,np,0.0_wp,blocks(g)%kernel(1,q),nq)
+          call DGEMM_('N','N',np,1,np,One,blocks(g)%metric,np,projection(1,q),np,Zero,work,np)
+          call DGEMM_('T','N',nq,1,np,One,projection,np,work,np,Zero,blocks(g)%kernel(1,q),nq)
         end do
       end if
       if (ROMP2_IsParallel().and.(nq>0)) call GADGOp(blocks(g)%kernel(1,1),size(blocks(g)%kernel),'+')
@@ -1017,7 +1018,7 @@ real(kind=wp) function MOIntegral(i,a,spin,j,b,other) result(value)
   integer(kind=iwp) :: g,p,q
   real(kind=wp),external :: ddot_
   g=Mul(symorb(i),symorb(a))
-  value=0.0_wp
+  value=Zero
   if (g/=Mul(symorb(j),symorb(b))) return
   p=qindex(i,a,spin)
   q=qindex(j,b,other)
@@ -1034,7 +1035,7 @@ subroutine Doubles(energy,ierr)
   integer(kind=iwp),intent(out) :: ierr
   integer(kind=iwp) :: spin,other,i,j,a,b,component,paircount
   real(kind=wp) :: den,value
-  energy=0.0_wp
+  energy=Zero
   ierr=0
   do component=1,3
     spin=1

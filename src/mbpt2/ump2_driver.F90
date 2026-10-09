@@ -15,6 +15,7 @@
 subroutine UMP2_Driver(ireturn)
 
 use Definitions, only: wp, iwp, u6, RtoB
+use Constants, only: Zero, Three
 use Para_Info, only: nProcs, MyRank, Is_Real_Par
 use Data_Structures, only: SBA_Type, Allocate_DT, Deallocate_DT
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
@@ -112,7 +113,7 @@ if (.not. DoCholesky) then
 else
   ! Initialize the OpenMolcas Cholesky interface. In a real MPI run the
   ! Cholesky layer exposes only the vectors owned by the current rank.
-  call Cho_X_Init(ierr,0.0_wp)
+  call Cho_X_Init(ierr,Zero)
   if (ierr /= 0) then
     if (MyRank == 0) &
       write(u6,'(A,I8)') ' UMP2: Cho_X_Init failed, return code ',ierr
@@ -202,7 +203,7 @@ else
 
   Required = NAElements+NBElements+real(nRead,wp) &
              +6.0_wp*real(nBas,wp)**2 &
-             +3.0_wp*real(nBas,wp)*real(max(1,nOA,nOB),wp)
+             +Three*real(nBas,wp)*real(max(1,nOA,nOB),wp)
 
   call mma_maxDBLE(Available)
 
@@ -223,8 +224,8 @@ else
   call mma_allocate(RedVec,nRead,label='UMP2 reduced vector')
 
   ! Nonlocal rank blocks must be exactly zero before the global sum.
-  La = 0.0_wp
-  Lb = 0.0_wp
+  La = Zero
+  Lb = Zero
 
   ! Case 0 gives A2(nBas*nBas,1) and A3(nBas,nBas,1) aliases.
   ! Allocate_SBA does NOT initialize ipOff: set it explicitly.
