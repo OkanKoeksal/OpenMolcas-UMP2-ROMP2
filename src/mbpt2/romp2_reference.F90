@@ -35,7 +35,7 @@ integer(kind=iwp) :: MPIFlag
   Message='ROMP2 requires C1 high-spin determinant RASSCF with conventional or Cholesky integrals.'
   call Get_cArray('Relax Method',method,8)
   MPIFlag=0
-  if ((method/='CASSCF  ').and.(method/='RASSCF  ')) MPIFlag=1
+  if ((method(1:6)/='CASSCF').and.(method(1:6)/='RASSCF')) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) return
   call DecideOnCholesky(DoCholesky)

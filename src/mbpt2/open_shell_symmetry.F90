@@ -70,7 +70,7 @@ integer(kind=iwp) :: MPIFlag
   if (Reduce_Prt().and.(iPL<3)) iPL=0
   message='Symmetry reference initialization failed.'
   cho_open=.false.
-  restricted=(method=='CASSCF  ').or.(method=='RASSCF  ')
+  restricted=(method(1:6)=='CASSCF').or.(method(1:6)=='RASSCF')
   workers=1
   rankid=0
   if (((nProcs>1).and.Is_Real_Par())) then

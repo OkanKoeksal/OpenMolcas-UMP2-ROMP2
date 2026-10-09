@@ -11,7 +11,6 @@
 ! Copyright (C) 1998, Roland Lindh                                     *
 !               2004,2012, Thomas Bondo Pedersen                       *
 !               2007, Francesco Aquilante                              *
-!               2026, Okan Koeksal                                     *
 !***********************************************************************
 
 subroutine MP2_Driver(ireturn)
@@ -91,7 +90,9 @@ TCPT = seconds()
 call Get_cArray('Relax Method',Method1,8)
 
 ! Preserve the tested C1 drivers: use irrep-blocked processing otherwise.
-if ((Method1=='UHF-SCF ').or.(Method1=='CASSCF  ').or.(Method1=='RASSCF  ')) then
+if ((Method1(1:7)=='UHF-SCF').or. &
+    (Method1(1:6)=='CASSCF').or. &
+    (Method1(1:6)=='RASSCF')) then
   call Get_iScalar('nSym',ReferenceNSym)
   if (ReferenceNSym/=1) then
     call Open_Shell_Symmetry_Driver(Method1,ireturn)
@@ -100,7 +101,7 @@ if ((Method1=='UHF-SCF ').or.(Method1=='CASSCF  ').or.(Method1=='RASSCF  ')) the
 end if
 
 ! Dispatch UHF before entering RHF-specific orbital processing.
-if (Method1 == 'UHF-SCF ') then
+if (Method1(1:7) == 'UHF-SCF') then
   call UMP2_Driver(ireturn)
   return
 end if
@@ -108,18 +109,18 @@ end if
 ! ROMP2 accepts the determinant RASSCF/ROHF subset.  The reference
 ! reader rejects multiconfigurational wave functions rather than applying
 ! the single-reference ROHF-MBPT(2) equations to an invalid reference.
-if ((Method1 == 'CASSCF  ') .or. (Method1 == 'RASSCF  ')) then
+if ((Method1(1:6) == 'CASSCF') .or. (Method1(1:6) == 'RASSCF')) then
   call ROMP2_Driver(ireturn)
   return
 end if
-if (Method1 == 'ROMP2   ') then
+if (Method1(1:5) == 'ROMP2') then
   call WarningMessage(2,'Run determinant RASSCF again before another ROMP2 calculation.')
   ireturn = _RC_INPUT_ERROR_
   return
 end if
 
 ! Prevent a previous UMP2 result from entering the RHF path.
-if (Method1 == 'UMP2    ') then
+if (Method1(1:4) == 'UMP2') then
   call WarningMessage(2,'Run SCF again before another UMP2 calculation.')
   ireturn = _RC_INPUT_ERROR_
   return

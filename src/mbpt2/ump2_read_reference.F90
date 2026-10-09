@@ -42,7 +42,7 @@ call UMP2_Clean()
 
 call Get_cArray('Relax Method',ReferenceMethod,8)
 
-if (ReferenceMethod /= 'UHF-SCF ') then
+if (ReferenceMethod(1:7) /= 'UHF-SCF') then
   call Fail('UMP2 requires a direct UHF-SCF reference.')
   return
 end if
