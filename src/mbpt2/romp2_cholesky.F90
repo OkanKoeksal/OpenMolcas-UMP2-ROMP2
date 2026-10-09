@@ -14,7 +14,7 @@
 module ROMP2_Cholesky
 ! Serial/MPI C1 Cholesky lifecycle shared by the reference-Fock and doubles
 ! stages. AO vectors are streamed twice: no four-index AO tensor is built.
-use Definitions, only: wp,iwp,u6
+use Definitions, only: wp,iwp,u6,RtoB
 use Para_Info, only: nProcs,MyRank
 use ROMP2_Parallel
 use Data_Structures, only: SBA_Type,Allocate_DT,Deallocate_DT
@@ -44,7 +44,7 @@ end function ROMP2_Cho_Is_Finite
 subroutine ROMP2_Cho_Open(ierr,Message)
   integer(kind=iwp),intent(out) :: ierr
   character(len=*),intent(out) :: Message
-  integer(kind=iwp) :: Dims(1),Available,nWorkers,iWorker,bits_per_real,element_limit
+  integer(kind=iwp) :: Dims(1),Available,nWorkers,iWorker,element_limit
   integer(kind=iwp),allocatable :: Counts(:)
   real(kind=wp) :: Required
 #include "warnings.h"
@@ -114,9 +114,8 @@ subroutine ROMP2_Cho_Open(ierr,Message)
   nRead=max(1,nRead)
   Required=real(nRead,wp)+real(nBas,wp)**2
   call mma_maxDBLE(Available)
-  bits_per_real=int(storage_size(0.0_wp),kind=iwp)
   element_limit=huge(Available)
-  element_limit=element_limit/bits_per_real
+  element_limit=element_limit/RtoB
   if (ROMP2_Any((Required>0.75_wp*real(Available,wp)).or. &
       (Required>real(element_limit,wp)))) then
     Message='Insufficient memory or integer range for ROMP2 AO Cholesky reader.'
@@ -226,7 +225,7 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
   ! The shared UMP2 transformation excludes nFro occupied orbitals.
   integer(kind=iwp),intent(out) :: ierr
   character(len=*),intent(out) :: Message
-  integer(kind=iwp) :: Available,iVec,GlobalVec,bits_per_real,element_limit
+  integer(kind=iwp) :: Available,iVec,GlobalVec,element_limit
   real(kind=wp) :: NAElements,NBElements,Required
   real(kind=wp),allocatable :: La(:,:,:),Lb(:,:,:)
   ierr=1
@@ -234,9 +233,8 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
   if (ROMP2_Any((.not.ChoReady).or.(.not.HaveAO))) return
   NAElements=real(nVA,wp)*real(nOA,wp)*real(nGlobal,wp)
   NBElements=real(nVB,wp)*real(nOB,wp)*real(nGlobal,wp)
-  bits_per_real=int(storage_size(0.0_wp),kind=iwp)
   element_limit=huge(Available)
-  element_limit=element_limit/bits_per_real
+  element_limit=element_limit/RtoB
   if (ROMP2_Any(max(NAElements,NBElements)>real(element_limit,wp))) then
     Message='ROMP2 transformed vectors exceed supported integer indexing range.'
     return

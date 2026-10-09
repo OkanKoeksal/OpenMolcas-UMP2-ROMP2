@@ -16,7 +16,7 @@ module Open_Shell_Symmetry
 ! AO pair metrics and occupied-virtual pairs are grouped by product irrep.
 ! Conventional metrics and transformed vectors are replicated; computation
 ! is distributed. This is an in-core implementation, with memory checks.
-use Definitions, only: wp,iwp,u6
+use Definitions, only: wp,iwp,u6,RtoB
 use Symmetry_Info, only: Mul
 use Para_Info, only: nProcs,MyRank
 use ROMP2_Parallel, only: ROMP2_Any,ROMP2_IsRoot,ROMP2_IsParallel,ROMP2_SyncError
@@ -245,11 +245,10 @@ end function Open_Shell_Is_Finite
 
 logical function MemoryOK(elements)
   real(kind=wp),intent(in) :: elements
-  integer(kind=iwp) :: available,bits_per_real,element_limit
+  integer(kind=iwp) :: available,element_limit
   call mma_maxDBLE(available)
-  bits_per_real=int(storage_size(0.0_wp),kind=iwp)
   element_limit=huge(available)
-  element_limit=element_limit/bits_per_real
+  element_limit=element_limit/RtoB
   MemoryOK=.not.ROMP2_Any((elements>0.65_wp*real(available,wp)).or. &
                           (elements>real(element_limit,wp)))
   if (.not.MemoryOK) message='Insufficient memory or integer range for in-core symmetry MP2.'

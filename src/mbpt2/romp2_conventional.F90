@@ -25,7 +25,7 @@
 ! are included exactly twice through the two distinct matrix entries.
 module ROMP2_Conventional
 
-use Definitions, only: wp, iwp, u6
+use Definitions, only: wp, iwp, u6, RtoB
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
 
 implicit none
@@ -249,7 +249,7 @@ contains
     call mma_maxDBLE(Available)
     if (Parallel) call gaIgOP_SCAL(Available,'min')
     if (Required+131072.0_wp > 0.8_wp*real(Available,wp)) then
-      write(u6,'(A,F14.1)') ' Conventional ROMP2 estimated array storage (MiB): ',Required*8.0_wp/1048576.0_wp
+      write(u6,'(A,F14.1)') ' Conventional ROMP2 estimated array storage (MiB): ',Required*real(RtoB,wp)/1048576.0_wp
       ierr = _RC_MEMORY_ERROR_
       Message = 'Insufficient memory for conventional ROMP2 half transformation: increase MOLCAS_MEM or use Cholesky.'
     end if

@@ -14,7 +14,7 @@
 
 subroutine UMP2_Driver(ireturn)
 
-use Definitions, only: wp, iwp, u6
+use Definitions, only: wp, iwp, u6, RtoB
 use Para_Info, only: nProcs, MyRank, Is_Real_Par
 use Data_Structures, only: SBA_Type, Allocate_DT, Deallocate_DT
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
@@ -33,7 +33,7 @@ integer(kind=iwp), intent(out) :: ireturn
 integer(kind=iwp) :: ierr, FinalRC, nChoLocal, nChoGlobal
 integer(kind=iwp) :: nRead, iVec, iRedC, GlobalVec, LocalVectorErr
 integer(kind=iwp) :: ChoOffset, nChoMin, nChoMax, nWorkers, iWorker
-integer(kind=iwp) :: Available, Skip(8), Dims(1), iTol, bits_per_real, element_limit
+integer(kind=iwp) :: Available, Skip(8), Dims(1), iTol, element_limit
 integer(kind=iwp), external :: Cho_X_GetTol
 integer(kind=iwp), allocatable :: ChoCounts(:)
 logical(kind=iwp) :: IsDF, ChoReady, HaveAO
@@ -192,9 +192,8 @@ else
   NAElements = real(nVA,wp)*real(nOA,wp)*real(nChoGlobal,wp)
   NBElements = real(nVB,wp)*real(nOB,wp)*real(nChoGlobal,wp)
 
-  bits_per_real = int(storage_size(0.0_wp),kind=iwp)
   element_limit = huge(nRead)
-  element_limit = element_limit/bits_per_real
+  element_limit = element_limit/RtoB
   if (max(NAElements,NBElements,real(nBas,wp)**2) > real(element_limit,wp)) then
     call Fail(_RC_MEMORY_ERROR_, &
               'UMP2 array dimensions exceed the supported integer indexing range.')
