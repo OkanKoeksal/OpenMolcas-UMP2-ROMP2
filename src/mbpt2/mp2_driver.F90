@@ -11,6 +11,7 @@
 ! Copyright (C) 1998, Roland Lindh                                     *
 !               2004,2012, Thomas Bondo Pedersen                       *
 !               2007, Francesco Aquilante                              *
+!               2026, Okan Koeksal                                     *
 !***********************************************************************
 
 subroutine MP2_Driver(ireturn)
@@ -58,7 +59,8 @@ implicit none
 interface
   subroutine RdInp(CMO,Eall,Eocc,Eext,iTst,ESCF,OpenErr,OpenMessage,SymFrozen,SymOcc)
     use Definitions, only: wp,iwp
-    real(kind=wp),optional,intent(out) :: CMO(*),Eall(*),Eocc(*),Eext(*)
+#include "intent.fh"
+    real(kind=wp),optional,intent(_OUT_) :: CMO(*),Eall(*),Eocc(*),Eext(*)
     integer(kind=iwp),optional,intent(out) :: iTst,OpenErr
     real(kind=wp),optional,intent(out) :: ESCF
     character(len=*),optional,intent(out) :: OpenMessage
