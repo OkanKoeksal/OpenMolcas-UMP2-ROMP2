@@ -23,6 +23,19 @@ use ROMP2_Semicanonical, only: ROMP2_Semi
 use ROMP2_Conventional, only: ROMP2_Conventional_Energy
 use stdalloc, only: mma_allocate,mma_deallocate
 implicit none
+
+interface
+  subroutine RdInp(CMO,Eall,Eocc,Eext,iTst,ESCF,OpenErr,OpenMessage,SymFrozen,SymOcc)
+    use Definitions, only: wp,iwp
+    real(kind=wp),optional,intent(out) :: CMO(*),Eall(*),Eocc(*),Eext(*)
+    integer(kind=iwp),optional,intent(out) :: iTst,OpenErr
+    real(kind=wp),optional,intent(out) :: ESCF
+    character(len=*),optional,intent(out) :: OpenMessage
+    integer(kind=iwp),optional,intent(out) :: SymFrozen(:)
+    integer(kind=iwp),optional,intent(in) :: SymOcc(:,:)
+  end subroutine RdInp
+end interface
+
 #include "warnings.h"
 integer(kind=iwp),intent(out) :: ireturn
 integer(kind=iwp) :: ierr,i,cleanupRC
@@ -47,7 +60,7 @@ subroutine RunCalculation()
 call ROMP2_Read(ierr,Message)
 call ROMP2_SyncError(ierr,Message)
 if (ierr/=0) return
-call UMP2_RdInp(ierr,Message)
+call RdInp(OpenErr=ierr,OpenMessage=Message)
 call ROMP2_SyncError(ierr,Message)
 if (ierr/=0) return
 if (ROMP2_Any((nFro<0).or.(nFro>min(nOccA,nOccB)))) then

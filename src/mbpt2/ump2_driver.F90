@@ -28,6 +28,19 @@ use UMP2_Cholesky_Transform, only: UMP2_Transform_AO_Batch
 use UMP2_Conventional, only: UMP2_Conventional_Energy
 
 implicit none
+
+interface
+  subroutine RdInp(CMO,Eall,Eocc,Eext,iTst,ESCF,OpenErr,OpenMessage,SymFrozen,SymOcc)
+    use Definitions, only: wp,iwp
+    real(kind=wp),optional,intent(out) :: CMO(*),Eall(*),Eocc(*),Eext(*)
+    integer(kind=iwp),optional,intent(out) :: iTst,OpenErr
+    real(kind=wp),optional,intent(out) :: ESCF
+    character(len=*),optional,intent(out) :: OpenMessage
+    integer(kind=iwp),optional,intent(out) :: SymFrozen(:)
+    integer(kind=iwp),optional,intent(in) :: SymOcc(:,:)
+  end subroutine RdInp
+end interface
+
 #include "warnings.h"
 
 integer(kind=iwp), intent(out) :: ireturn
@@ -84,7 +97,7 @@ if (ierr /= 0) then
   return
 end if
 
-call UMP2_RdInp(ierr,Message)
+call RdInp(OpenErr=ierr,OpenMessage=Message)
 if (ierr /= 0) then
   call Fail(_RC_INPUT_ERROR_,Message)
   return

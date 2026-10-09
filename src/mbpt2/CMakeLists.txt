@@ -47,7 +47,6 @@ set (sources
      ump2_global.F90
      ump2_driver.F90
      ump2_read_reference.F90
-     ump2_rdinp.F90
      ump2_setup_spaces.F90
      ump2_cholesky_transform.F90
      ump2_energy.F90

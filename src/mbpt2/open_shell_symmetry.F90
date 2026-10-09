@@ -14,7 +14,7 @@
 module Open_Shell_Symmetry
 ! Abelian symmetry energy path. C1 continues to use the existing drivers.
 ! AO pair metrics and occupied-virtual pairs are grouped by product irrep.
-! Conventional metrics and transformed vectors are replicated: computation
+! Conventional metrics and transformed vectors are replicated; computation
 ! is distributed. This is an in-core implementation, with memory checks.
 use Definitions, only: wp,iwp,u6,RtoB
 use Constants, only: Zero, One, Three, Four, Five, Half
@@ -50,13 +50,15 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   real(kind=wp),allocatable :: c(:,:),f(:,:),en(:)
   logical :: cho_open
   interface
-    subroutine UMP2_RdInp(ierr,Message,SymFrozen,SymOcc)
-      use Definitions, only: iwp
-      integer(kind=iwp),intent(out) :: ierr
-      character(len=*),intent(out) :: Message
-      integer(kind=iwp),intent(out),optional :: SymFrozen(:)
-      integer(kind=iwp),intent(in),optional :: SymOcc(:,:)
-    end subroutine UMP2_RdInp
+    subroutine RdInp(CMO,Eall,Eocc,Eext,iTst,ESCF,OpenErr,OpenMessage,SymFrozen,SymOcc)
+      use Definitions, only: wp,iwp
+      real(kind=wp),optional,intent(out) :: CMO(*),Eall(*),Eocc(*),Eext(*)
+      integer(kind=iwp),optional,intent(out) :: iTst,OpenErr
+      real(kind=wp),optional,intent(out) :: ESCF
+      character(len=*),optional,intent(out) :: OpenMessage
+      integer(kind=iwp),optional,intent(out) :: SymFrozen(:)
+      integer(kind=iwp),optional,intent(in) :: SymOcc(:,:)
+    end subroutine RdInp
   end interface
   integer(kind=iwp),external :: iPrintLevel
   logical(kind=iwp),external :: Reduce_Prt
@@ -81,7 +83,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   ! for all real reference data used by distributed contractions.  This
   ! avoids rank-local RUNFILE state from changing the MPI result.
   call SynchronizeReference()
-  call UMP2_RdInp(ierr,message,frozen(1:ns),occ(1:ns,:))
+  call RdInp(OpenErr=ierr,OpenMessage=message,SymFrozen=frozen(1:ns),SymOcc=occ(1:ns,:))
   call ROMP2_SyncError(ierr,message)
   if (ierr/=0) exit calculation
   ! Likewise use the root input parse as the single frozen-space definition.
@@ -300,7 +302,7 @@ subroutine ReadReference(ierr)
   call ReadCounts('nFro',nf,ierr)
   if (ierr/=0) return
   ierr=1
-  message='Reference-frozen orbitals are unsupported: freeze only in MBPT2.'
+  message='Reference-frozen orbitals are unsupported; freeze only in MBPT2.'
   if (any(nf(1:ns)/=0)) return
   if (restricted) then
     call ReadCounts('nAsh',active,ierr)
@@ -382,7 +384,7 @@ end subroutine ReadReference
 
 subroutine SynchronizeReference()
   ! Explicitly replicate root reference data before any MPI-distributed
-  ! Fock, transformation, or doubles work.  The C1 drivers are untouched:
+  ! Fock, transformation, or doubles work.  The C1 drivers are untouched;
   ! this routine is used only by the non-C1 symmetry path.
   real(kind=wp) :: scalar(1)
   if (.not.ROMP2_IsParallel()) return
@@ -400,7 +402,7 @@ subroutine SynchronizeReference()
 end subroutine SynchronizeReference
 
 subroutine SynchronizeFrozen()
-  ! The shared open-shell input reader parses MBPT2 input on every rank: make
+  ! The shared open-shell input reader parses MBPT2 input on every rank; make
   ! rank zero's accepted counts authoritative for all subsequent maps.
   if (.not.ROMP2_IsParallel()) return
   if (.not.ROMP2_IsRoot()) frozen(1:ns)=0
@@ -665,7 +667,7 @@ subroutine ReadCholesky(ierr,initialized)
     end do
     call Deallocate_DT(ao)
     message='Symmetry Cholesky vector read failed.'
-    ! Rank-local vector loops have unequal lengths: synchronize afterwards.
+    ! Rank-local vector loops have unequal lengths; synchronize afterwards.
     call ROMP2_SyncError(rc,message)
     if (rc/=0) exit
   end do
@@ -875,7 +877,7 @@ subroutine ReferenceFock(ierr)
     end do
   end do
   grad=maxval(abs(vec))
-  message='ROHF symmetry stationarity check failed: tighten RASSCF convergence.'
+  message='ROHF symmetry stationarity check failed; tighten RASSCF convergence.'
   if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) exit build_fock
   ierr=0
   end block build_fock
