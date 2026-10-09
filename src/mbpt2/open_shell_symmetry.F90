@@ -63,30 +63,31 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
     workers=nProcs
     rankid=MyRank
   end if
+  calculation: block
   call ReadReference(ierr)
   call ROMP2_SyncError(ierr,message)
-  if (ierr/=0) goto 900
+  if (ierr/=0) exit calculation
   ! RUNFILE records are logically global, but make rank zero authoritative
   ! for all real reference data used by distributed contractions.  This
   ! avoids rank-local RUNFILE state from changing the MPI result.
   call SynchronizeReference()
   call ReadFrozen(ierr)
   call ROMP2_SyncError(ierr,message)
-  if (ierr/=0) goto 900
+  if (ierr/=0) exit calculation
   ! Likewise use the root input parse as the single frozen-space definition.
   call SynchronizeFrozen()
   call MakePairs(ierr)
-  if (ierr/=0) goto 900
+  if (ierr/=0) exit calculation
   if (cho) then
     call ReadCholesky(ierr,cho_open)
   else
     call ReadConventional(ierr)
   end if
-  if (ierr/=0) goto 900
+  if (ierr/=0) exit calculation
   singles=0.0_wp
   if (restricted) then
     call ReferenceFock(ierr)
-    if (ierr/=0) goto 900
+    if (ierr/=0) exit calculation
     ! Each irrep and spin is diagonalized independently. Occupied and
     ! virtual subspaces never mix, including in degenerate spectra.
     ierr=0
@@ -115,7 +116,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
     end if
     message='Symmetry-block semicanonicalization or singles failed.'
     call ROMP2_SyncError(ierr,message)
-    if (ierr/=0) goto 900
+    if (ierr/=0) exit calculation
     if (ROMP2_IsParallel()) then
       if (.not.ROMP2_IsRoot()) then
         coeff=0.0_wp
@@ -132,21 +133,21 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
   call mma_deallocate(density,safe='*')
   call mma_deallocate(fock,safe='*')
   call TransformPairs(ierr)
-  if (ierr/=0) goto 900
+  if (ierr/=0) exit calculation
   call Doubles(e,ierr)
-  if (ierr/=0) goto 900
+  if (ierr/=0) exit calculation
   corr=sum(e)+sum(singles)
   total=eref+corr
   if (ROMP2_Any(logical(.not.Open_Shell_Is_Finite(total),kind=kind(.true.)))) then
     message='Nonfinite symmetry MP2 total energy.'
-    goto 900
+    exit calculation
   end if
   if (cho_open) then
     call Cho_X_Final(ierr)
     cho_open=.false.
     message='Symmetry Cholesky finalization failed.'
     call ROMP2_SyncError(ierr,message)
-    if (ierr/=0) goto 900
+    if (ierr/=0) exit calculation
   end if
   if (ROMP2_IsRoot() .and. (iPL>=2)) then
     call PrintResultsHeader()
@@ -196,7 +197,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
     call Add_Info('E_MP2',[total],1,8)
   end if
   ireturn=_RC_ALL_IS_WELL_
-900 continue
+  end block calculation
   if (cho_open) call Cho_X_Final(rc)
   if ((ireturn/=_RC_ALL_IS_WELL_).and.ROMP2_IsRoot()) write(u6,'(A)') ' Symmetry MP2 error: '//trim(message)
   do g=1,8
@@ -413,12 +414,13 @@ subroutine ReadFrozen(ierr)
   call SpoolInp(lu)
   rewind(lu)
   call RdNLst(lu,'MBPT2')
+  parse_input: block
   do
     raw=Get_Ln(lu)
     line=raw
     call StdFmt(line,command)
     if (command=='END ') exit
-    if ((command/='FROZ').or.seen) goto 900
+    if ((command/='FROZ').or.seen) exit parse_input
     eq=index(raw,'=')
     values=''
     if (eq>0) values=raw(eq+1:)
@@ -436,23 +438,23 @@ subroutine ReadFrozen(ierr)
         if (index('0123456789',values(k:k))==0) exit
         k=k+1
       end do
-      if (k==start) goto 900
+      if (k==start) exit parse_input
       n=n+1
-      if (n>ns) goto 900
+      if (n>ns) exit parse_input
       token=values(start:k-1)
       value=0
       read(token,*,iostat=ios) value
-      if ((ios/=0).or.(value<0)) goto 900
+      if ((ios/=0).or.(value<0)) exit parse_input
       frozen(n)=value
     end do
-    if (n/=ns) goto 900
+    if (n/=ns) exit parse_input
     do s=1,ns
-      if (frozen(s)>minval(occ(s,:))) goto 900
+      if (frozen(s)>minval(occ(s,:))) exit parse_input
     end do
     seen=.true.
   end do
   if (seen) ierr=0
-900 continue
+  end block parse_input
   call Close_LuSpool(lu)
 end subroutine ReadFrozen
 
@@ -551,21 +553,22 @@ subroutine ReadConventional(ierr)
   ! Therefore every rank must open and read its local ORDINT contribution.
   ! Each packed AO-pair row is reconstructed by a global sum before it is
   ! copied into the replicated symmetry-block metric.
+  read_integrals: block
   rc=0
   call f_Inquire('ORDINT',exists)
   if ((.not.exists).or.AuxTwo%Opn) rc=1
-  if (ROMP2_Any(rc/=0)) goto 710
+  if (ROMP2_Any(rc/=0)) exit read_integrals
 
   lu=43
   call OpnOrd(rc,0,'ORDINT',lu)
   if (rc==0) opened=.true.
-  if (ROMP2_Any(rc/=0)) goto 710
+  if (ROMP2_Any(rc/=0)) exit read_integrals
 
   call GetOrd(rc,square,fs,fb,skip)
   if (rc==0) then
     if ((fs/=ns).or.any(fb(1:ns)/=bs(1:ns)).or.any(skip(1:ns)/=0)) rc=1
   end if
-  if (ROMP2_Any(rc/=0)) goto 710
+  if (ROMP2_Any(rc/=0)) exit read_integrals
 
   do g=1,ns
     do s=1,ns
@@ -592,7 +595,7 @@ subroutine ReadConventional(ierr)
             if (nmat/=1) rc=1
             if (.not.all(Open_Shell_Is_Finite(buffer(1:nq)))) rc=1
           end if
-          if (ROMP2_Any(rc/=0)) goto 710
+          if (ROMP2_Any(rc/=0)) exit read_integrals
 
           if (ROMP2_IsParallel()) call GADGOp(buffer(1),nq,'+')
 
@@ -603,7 +606,7 @@ subroutine ReadConventional(ierr)
     end do
   end do
 
-710 continue
+  end block read_integrals
   rc2=0
   if (opened) then
     call ClsOrd(rc2)
@@ -735,10 +738,11 @@ subroutine ReadOne(ierr)
   rc=0
   opened=.false.
   if (ROMP2_IsRoot()) then
+    read_one_root: block
     if (.not.AuxOne%Opn) then
       call OpnOne(rc,0,'ONEINT',41)
       opened=.true.
-      if (rc/=0) goto 710
+      if (rc/=0) exit read_one_root
     end if
     do pass=1,2
       opt=ibset(ibset(0,sNoOri),sNoNuc)
@@ -768,7 +772,7 @@ subroutine ReadOne(ierr)
         end do
       end do
     end do
-710 continue
+    end block read_one_root
     if (opened) then
       call ClsOne(rc2,0)
       if (rc2/=0) rc=rc2
@@ -809,8 +813,9 @@ subroutine ReferenceFock(ierr)
   call mma_allocate(mat,nb,nb,label='symmetry MO Fock')
   call mma_allocate(vec,nb,nb,label='symmetry AO vector')
   call mma_allocate(exchange,nb,nb,label='symmetry exchange')
+  build_fock: block
   call ReadOne(ierr)
-  if (ierr/=0) goto 900
+  if (ierr/=0) exit build_fock
   ierr=1
   density=0.0_wp
   ! Overlap validation and densities are independently symmetry-blocked.
@@ -832,7 +837,7 @@ subroutine ReferenceFock(ierr)
     end do
   end do
   message='Symmetry ROHF orbitals are not orthonormal.'
-  if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.)))) goto 900
+  if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.)))) exit build_fock
   fock=0.0_wp
   if (ROMP2_IsRoot()) then
     fock(:,:,1)=hcore
@@ -892,12 +897,12 @@ subroutine ReferenceFock(ierr)
   end if
   if (ROMP2_IsParallel()) call GADGOp(fock(1,1,1),size(fock),'+')
   message='Nonfinite symmetry reference Fock matrix.'
-  if (ROMP2_Any(logical(.not.all(Open_Shell_Is_Finite(fock)),kind=kind(.true.)))) goto 900
+  if (ROMP2_Any(logical(.not.all(Open_Shell_Is_Finite(fock)),kind=kind(.true.)))) exit build_fock
   call Get_dScalar('PotNuc',enuc)
   check=enuc+0.5_wp*(sum(density(:,:,1)*(hcore+fock(:,:,1)))+sum(density(:,:,2)*(hcore+fock(:,:,2))))
   message='Reconstructed symmetry ROHF energy differs from RASSCF.'
   if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(check)).or.(abs(check-eref)>1.0e-7_wp), &
-                       kind=kind(.true.)))) goto 900
+                       kind=kind(.true.)))) exit build_fock
   ! Stationarity test in the shared spatial ROHF basis, before rotation.
   grad=0.0_wp
   vec=0.0_wp
@@ -921,9 +926,9 @@ subroutine ReferenceFock(ierr)
   end do
   grad=maxval(abs(vec))
   message='ROHF symmetry stationarity check failed; tighten RASSCF convergence.'
-  if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) goto 900
+  if (ROMP2_Any(logical((.not.Open_Shell_Is_Finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.)))) exit build_fock
   ierr=0
-900 continue
+  end block build_fock
   call mma_deallocate(work)
   call mma_deallocate(mat)
   call mma_deallocate(vec)

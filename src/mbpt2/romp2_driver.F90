@@ -31,26 +31,38 @@ character(len=256) :: Message
 logical :: NonfiniteTotal
 ireturn=_RC_INPUT_ERROR_
 call UMP2_Clean()
+call RunCalculation()
+call ROMP2_Cho_Close(cleanupRC)
+if ((cleanupRC/=0) .and. ROMP2_IsRoot()) &
+  write(u6,'(A,I8)') ' ROMP2 Cholesky cleanup return code: ',cleanupRC
+if ((ireturn/=_RC_ALL_IS_WELL_).and.ROMP2_IsRoot()) write(u6,'(A)') ' ROMP2 error: '//trim(Message)
+call mma_deallocate(FA,safe='*')
+call mma_deallocate(FB,safe='*')
+call UMP2_Clean()
+
+contains
+
+subroutine RunCalculation()
 call ROMP2_Read(ierr,Message)
 call ROMP2_SyncError(ierr,Message)
-if (ierr/=0) goto 900
+if (ierr/=0) return
 call UMP2_RdInp(ierr,Message)
 call ROMP2_SyncError(ierr,Message)
-if (ierr/=0) goto 900
+if (ierr/=0) return
 if (ROMP2_Any((nFro<0).or.(nFro>min(nOccA,nOccB)))) then
   Message='ROMP2 Frozen must be between zero and the number of doubly occupied reference orbitals.'
-  goto 900
+  return
 end if
 if (DoCholesky) then
   call ROMP2_Cho_Open(ierr,Message)
   call ROMP2_SyncError(ierr,Message)
-  if (ierr/=0) goto 900
+  if (ierr/=0) return
 end if
 call mma_allocate(FA,nBas,nBas,label='ROMP2 Fock alpha')
 call mma_allocate(FB,nBas,nBas,label='ROMP2 Fock beta')
 call ROMP2_Fock(FA,FB,ierr,Message)
 call ROMP2_SyncError(ierr,Message)
-if (ierr/=0) goto 900
+if (ierr/=0) return
 ! Root diagonalizes once: every rank must use the same orbital gauge.
 ierr=0
 E1A=0.0_wp
@@ -65,7 +77,7 @@ if (ROMP2_IsRoot()) then
   end if
 end if
 call ROMP2_SyncError(ierr,Message)
-if (ierr/=0) goto 900
+if (ierr/=0) return
 if (ROMP2_IsParallel()) then
   if (MyRank/=0) then
     CAlpha=0.0_wp
@@ -86,14 +98,14 @@ call mma_deallocate(FA)
 call mma_deallocate(FB)
 call UMP2_Setup_Spaces(ierr,Message)
 call ROMP2_SyncError(ierr,Message)
-if (ierr/=0) goto 900
+if (ierr/=0) return
 if (DoCholesky) then
   call ROMP2_Cho_Energy(ierr,Message)
 else
   call ROMP2_Conventional_Energy(ierr,Message)
 end if
 call ROMP2_SyncError(ierr,Message)
-if (ierr/=0) goto 900
+if (ierr/=0) return
 ECorr=E1A+E1B+EAA+EBB+EAB
 ETotal=ESCF+ECorr
 ! Assignment converts the intrinsic result to the default logical kind
@@ -101,14 +113,14 @@ ETotal=ESCF+ECorr
 NonfiniteTotal=.not.ROMP2_Driver_Is_Finite(ETotal)
 if (ROMP2_Any(NonfiniteTotal)) then
   Message='Nonfinite ROMP2 total energy.'
-  goto 900
+  return
 end if
 ! Finalize before publishing any energy as successful.
 call ROMP2_Cho_Close(ierr)
 call ROMP2_SyncError(ierr,Message)
 if (ierr/=0) then
   Message='ROMP2 Cholesky finalization failed.'
-  goto 900
+  return
 end if
 if (ROMP2_IsRoot() .and. (iPL >= 2)) then
   call PrintResultsHeader()
@@ -156,16 +168,8 @@ call Add_Info('E_ROMP2_AA',[EAA],1,8)
 call Add_Info('E_ROMP2_BB',[EBB],1,8)
 call Add_Info('E_ROMP2_AB',[EAB],1,8)
 ireturn=_RC_ALL_IS_WELL_
-900 continue
-call ROMP2_Cho_Close(cleanupRC)
-if ((cleanupRC/=0) .and. ROMP2_IsRoot()) &
-  write(u6,'(A,I8)') ' ROMP2 Cholesky cleanup return code: ',cleanupRC
-if ((ireturn/=_RC_ALL_IS_WELL_).and.ROMP2_IsRoot()) write(u6,'(A)') ' ROMP2 error: '//trim(Message)
-call mma_deallocate(FA,safe='*')
-call mma_deallocate(FB,safe='*')
-call UMP2_Clean()
+end subroutine RunCalculation
 
-contains
 
 elemental logical function ROMP2_Driver_Is_Finite(x)
 

@@ -34,6 +34,8 @@ public :: ROMP2_Conventional_Energy
 
 contains
 
+
+
 elemental logical function ROMP2_Conv_Is_Finite(x)
 
   real(kind=wp), intent(in) :: x
@@ -84,56 +86,8 @@ subroutine ROMP2_Conventional_Energy(ierr,Message)
   if (ierr /= 0) return
   nPair = nBas*(nBas+1)/2
 
-  if (Reader) then
-    call OpnOrd(rc,0,'ORDINT',LuOrd)
-    Opened = .true.
-    if (rc /= 0) then
-      ierr = _RC_IO_ERROR_READ_
-      Message = 'Unable to open conventional ORDINT integrals.'
-    else
-      call GetOrd(rc,Square,FileNSym,FileBas,FileSkip)
-      if (rc /= 0) then
-        ierr = _RC_IO_ERROR_READ_
-        Message = 'Unable to read the ORDINT header.'
-      else if ((FileNSym /= 1) .or. (FileBas(1) /= nBas) .or. (FileSkip(1) /= 0)) then
-        ierr = _RC_INPUT_ERROR_
-        Message = 'ORDINT symmetry, basis dimensions, or skipped blocks disagree with the ROHF reference.'
-      end if
-    end if
-  end if
-  call SyncError()
-  if (ierr /= 0) goto 900
+  call ComputeEnergy()
 
-  ! In C1 both ordering modes expose nPair complete pair rows through
-  ! RdOrd_. Square controls symmetry-block duplication, not AO unpacking.
-
-  if ((nOA >= 2) .and. (nVA >= 2)) then
-    call TransformRight(CAlpha,nOccA,nOA,nVA,nOA,nVA)
-    if (ierr /= 0) goto 900
-    call Contract(CAlpha,nOccA,nOA,nVA,EOccA,EVirA,nOA,nVA,EOccA,EVirA,.true.,EAA)
-    call mma_deallocate(Half,safe='*')
-    call SyncError()
-    if (ierr /= 0) goto 900
-  end if
-
-  if (((nOB >= 2) .and. (nVB >= 2)) .or. &
-      ((nOA > 0) .and. (nVA > 0) .and. (nOB > 0) .and. (nVB > 0))) then
-    ! Reuse the beta half transformation for both BB and AB.
-    call TransformRight(CBeta,nOccB,nOB,nVB,max(nOA,nOB),max(nVA,nVB))
-    if (ierr /= 0) goto 900
-    if ((nOB >= 2) .and. (nVB >= 2)) then
-      call Contract(CBeta,nOccB,nOB,nVB,EOccB,EVirB,nOB,nVB,EOccB,EVirB,.true.,EBB)
-      call SyncError()
-      if (ierr /= 0) goto 900
-    end if
-    if ((nOA > 0) .and. (nVA > 0)) then
-      call Contract(CAlpha,nOccA,nOA,nVA,EOccA,EVirA,nOB,nVB,EOccB,EVirB,.false.,EAB)
-      call SyncError()
-      if (ierr /= 0) goto 900
-    end if
-  end if
-
-900 continue
   call mma_deallocate(Half,safe='*')
   if (Opened) then
     call ClsOrd(CloseRC)
@@ -161,6 +115,58 @@ subroutine ROMP2_Conventional_Energy(ierr,Message)
   end if
 
 contains
+
+  subroutine ComputeEnergy()
+  if (Reader) then
+    call OpnOrd(rc,0,'ORDINT',LuOrd)
+    Opened = .true.
+    if (rc /= 0) then
+      ierr = _RC_IO_ERROR_READ_
+      Message = 'Unable to open conventional ORDINT integrals.'
+    else
+      call GetOrd(rc,Square,FileNSym,FileBas,FileSkip)
+      if (rc /= 0) then
+        ierr = _RC_IO_ERROR_READ_
+        Message = 'Unable to read the ORDINT header.'
+      else if ((FileNSym /= 1) .or. (FileBas(1) /= nBas) .or. (FileSkip(1) /= 0)) then
+        ierr = _RC_INPUT_ERROR_
+        Message = 'ORDINT symmetry, basis dimensions, or skipped blocks disagree with the ROHF reference.'
+      end if
+    end if
+  end if
+  call SyncError()
+  if (ierr /= 0) return
+
+  ! In C1 both ordering modes expose nPair complete pair rows through
+  ! RdOrd_. Square controls symmetry-block duplication, not AO unpacking.
+
+  if ((nOA >= 2) .and. (nVA >= 2)) then
+    call TransformRight(CAlpha,nOccA,nOA,nVA,nOA,nVA)
+    if (ierr /= 0) return
+    call Contract(CAlpha,nOccA,nOA,nVA,EOccA,EVirA,nOA,nVA,EOccA,EVirA,.true.,EAA)
+    call mma_deallocate(Half,safe='*')
+    call SyncError()
+    if (ierr /= 0) return
+  end if
+
+  if (((nOB >= 2) .and. (nVB >= 2)) .or. &
+      ((nOA > 0) .and. (nVA > 0) .and. (nOB > 0) .and. (nVB > 0))) then
+    ! Reuse the beta half transformation for both BB and AB.
+    call TransformRight(CBeta,nOccB,nOB,nVB,max(nOA,nOB),max(nVA,nVB))
+    if (ierr /= 0) return
+    if ((nOB >= 2) .and. (nVB >= 2)) then
+      call Contract(CBeta,nOccB,nOB,nVB,EOccB,EVirB,nOB,nVB,EOccB,EVirB,.true.,EBB)
+      call SyncError()
+      if (ierr /= 0) return
+    end if
+    if ((nOA > 0) .and. (nVA > 0)) then
+      call Contract(CAlpha,nOccA,nOA,nVA,EOccA,EVirA,nOB,nVB,EOccB,EVirB,.false.,EAB)
+      call SyncError()
+      if (ierr /= 0) return
+    end if
+  end if
+
+  end subroutine ComputeEnergy
 
   subroutine SyncError()
     ! Always called by every rank at matching points, even on failure.

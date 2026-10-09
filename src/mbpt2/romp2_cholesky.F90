@@ -262,28 +262,28 @@ subroutine ROMP2_Cho_Energy(ierr,Message)
     if (ierr/=0) exit
   end do
   call ROMP2_SyncError(ierr,Message)
-  if (ierr/=0) goto 900
-  if (ROMP2_IsParallel()) then
-    if (size(La)>0) call GADGOp(La(1,1,1),size(La),'+')
-    if (size(Lb)>0) call GADGOp(Lb(1,1,1),size(Lb),'+')
+  if (ierr==0) then
+    if (ROMP2_IsParallel()) then
+      if (size(La)>0) call GADGOp(La(1,1,1),size(La),'+')
+      if (size(Lb)>0) call GADGOp(Lb(1,1,1),size(Lb),'+')
+    end if
+    if (ROMP2_Any(logical( &
+        (.not.all(ROMP2_Cho_Is_Finite(La))).or.(.not.all(ROMP2_Cho_Is_Finite(Lb))), &
+        kind=kind(.true.)))) then
+      ierr=1
+      Message='Nonfinite assembled Cholesky vectors.'
+    else
+      call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB,nOA,nVA,nOB,nVB,nGlobal,DenTol,EAA,EBB,EAB,ierr)
+      if (ierr/=0) then
+        Message='ROMP2 Cholesky doubles failed: check orbital-energy denominators.'
+      else if (.not.all(ROMP2_Cho_Is_Finite([EAA,EBB,EAB]))) then
+        ierr=1
+        Message='Nonfinite ROMP2 Cholesky doubles energy.'
+      else
+        Message=''
+      end if
+    end if
   end if
-  if (ROMP2_Any(logical( &
-      (.not.all(ROMP2_Cho_Is_Finite(La))).or.(.not.all(ROMP2_Cho_Is_Finite(Lb))), &
-      kind=kind(.true.)))) then
-    ierr=1
-    Message='Nonfinite assembled Cholesky vectors.'
-    goto 900
-  end if
-  call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB,nOA,nVA,nOB,nVB,nGlobal,DenTol,EAA,EBB,EAB,ierr)
-  if (ierr/=0) then
-    Message='ROMP2 Cholesky doubles failed: check orbital-energy denominators.'
-  else if (.not.all(ROMP2_Cho_Is_Finite([EAA,EBB,EAB]))) then
-    ierr=1
-    Message='Nonfinite ROMP2 Cholesky doubles energy.'
-  else
-    Message=''
-  end if
-900 continue
   call mma_deallocate(La)
   call mma_deallocate(Lb)
 end subroutine ROMP2_Cho_Energy
