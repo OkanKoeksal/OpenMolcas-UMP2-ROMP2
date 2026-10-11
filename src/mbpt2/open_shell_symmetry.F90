@@ -47,7 +47,7 @@ subroutine Open_Shell_Symmetry_Driver(method,ireturn)
 integer(kind=iwp) :: MPIFlag
   character(len=*),intent(in) :: method
   integer(kind=iwp),intent(out) :: ireturn
-  integer(kind=iwp) :: ierr,g,spin,s,n,first,last,rc
+  integer(kind=iwp) :: ierr,g,spin,s,n,first,last,rc,iOnce
   real(kind=wp) :: e(3),total,corr
   real(kind=wp),allocatable :: c(:,:),f(:,:),en(:)
   logical :: cho_open
@@ -78,7 +78,7 @@ integer(kind=iwp) :: MPIFlag
     workers=nProcs
     rankid=MyRank
   end if
-  calculation: do
+  calculation: do iOnce=1,1
   call ReadReference(ierr)
   MPIFlag=0
   if (ierr/=0) MPIFlag=1
@@ -243,7 +243,6 @@ integer(kind=iwp) :: MPIFlag
     call Add_Info('E_MP2',[total],1,8)
   end if
   ireturn=_RC_ALL_IS_WELL_
-  exit calculation
   end do calculation
   if (cho_open) call Cho_X_Final(rc)
   if ((ireturn/=_RC_ALL_IS_WELL_).and.((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) write(u6,'(A)') ' Symmetry MP2 error: '//trim(message)
@@ -518,7 +517,7 @@ subroutine ReadConventional(ierr)
   use TwoDat, only: AuxTwo
 integer(kind=iwp) :: MPIFlag
   integer(kind=iwp),intent(out) :: ierr
-  integer(kind=iwp) :: rc,rc2,lu,fs,fb(8),skip(8),g,s,t,u,v,np,nq,p,opt,nmat,p0,q0
+  integer(kind=iwp) :: rc,rc2,lu,fs,fb(8),skip(8),g,s,t,u,v,np,nq,p,opt,nmat,p0,q0,iOnce
   logical(kind=iwp) :: square,exists
   logical :: opened
   real(kind=wp),allocatable :: buffer(:)
@@ -540,7 +539,7 @@ integer(kind=iwp) :: MPIFlag
   ! Therefore every rank must open and read its local ORDINT contribution.
   ! Each packed AO-pair row is reconstructed by a global sum before it is
   ! copied into the replicated symmetry-block metric.
-  read_integrals: do
+  read_integrals: do iOnce=1,1
   rc=0
   call f_Inquire('ORDINT',exists)
   if ((.not.exists).or.AuxTwo%Opn) rc=1
@@ -604,8 +603,6 @@ integer(kind=iwp) :: MPIFlag
       end do
     end do
   end do
-
-  exit read_integrals
 
   end do read_integrals
   rc2=0
@@ -756,7 +753,7 @@ subroutine ReadOne(ierr)
   use OneDat, only: AuxOne,sNoNuc,sNoOri
 integer(kind=iwp) :: MPIFlag
   integer(kind=iwp),intent(out) :: ierr
-  integer(kind=iwp) :: rc,rc2,opt,comp,sy,s,i,j,k,pass,np
+  integer(kind=iwp) :: rc,rc2,opt,comp,sy,s,i,j,k,pass,np,iOnce
   logical :: opened
   real(kind=wp),allocatable :: buffer(:)
   character(len=8) :: label
@@ -767,7 +764,7 @@ integer(kind=iwp) :: MPIFlag
   rc=0
   opened=.false.
   if (((nProcs<=1).or.(.not.Is_Real_Par()).or.(MyRank==0))) then
-    read_one_root: do
+    read_one_root: do iOnce=1,1
     if (.not.AuxOne%Opn) then
       call OpnOne(rc,0,'ONEINT',41)
       opened=.true.
@@ -801,7 +798,6 @@ integer(kind=iwp) :: MPIFlag
         end do
       end do
     end do
-    exit read_one_root
     end do read_one_root
     if (opened) then
       call ClsOne(rc2,0)
@@ -838,7 +834,7 @@ end function AOIntegral
 subroutine ReferenceFock(ierr)
 integer(kind=iwp) :: MPIFlag
   integer(kind=iwp),intent(out) :: ierr
-  integer(kind=iwp) :: s,t,g,spin,n,m,first,last,other,i,j,k,l,p,v,mu,nu
+  integer(kind=iwp) :: s,t,g,spin,n,m,first,last,other,i,j,k,l,p,v,mu,nu,iOnce
   real(kind=wp),allocatable :: work(:,:),mat(:,:),vec(:,:),exchange(:,:)
   real(kind=wp) :: charge,enuc,check,grad,oi,oj
   ierr=1
@@ -851,7 +847,7 @@ integer(kind=iwp) :: MPIFlag
   call mma_allocate(mat,nb,nb,label='symmetry MO Fock')
   call mma_allocate(vec,nb,nb,label='symmetry AO vector')
   call mma_allocate(exchange,nb,nb,label='symmetry exchange')
-  build_fock: do
+  build_fock: do iOnce=1,1
   call ReadOne(ierr)
   if (ierr/=0) exit build_fock
   ierr=1
@@ -978,7 +974,6 @@ integer(kind=iwp) :: MPIFlag
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) exit build_fock
   ierr=0
-  exit build_fock
   end do build_fock
   call mma_deallocate(work)
   call mma_deallocate(mat)

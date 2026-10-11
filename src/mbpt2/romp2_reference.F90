@@ -199,7 +199,7 @@ contains
   end subroutine ReadOneMatrices
 
   subroutine BuildFockMatrices()
-  integer(kind=iwp) :: MPIFlag
+  integer(kind=iwp) :: MPIFlag,i,j,k,l
   ! ONEINT and ORDINT I/O are local in the Molcas reader layer.
   ! Root is the sole file reader: distribute complete data explicitly.
   H(:,:)=Zero

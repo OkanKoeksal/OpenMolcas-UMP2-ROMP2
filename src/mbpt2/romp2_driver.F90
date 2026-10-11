@@ -58,7 +58,7 @@ call UMP2_Clean()
 contains
 
 subroutine RunCalculation()
-integer(kind=iwp) :: MPIFlag
+integer(kind=iwp) :: MPIFlag,i
 call ROMP2_Read(ierr,Message)
 MPIFlag=0
 if (ierr/=0) MPIFlag=1
