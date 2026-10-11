@@ -117,7 +117,7 @@ integer(kind=iwp) :: MPIFlag
   character(len=*), intent(out) :: Message
   real(kind=wp), allocatable :: ERI(:,:,:,:),H(:,:),S(:,:),DA(:,:),DB(:,:),Buf(:),T(:,:),MA(:,:),MB(:,:)
   real(kind=wp) :: required,enuc,echeck,grad,oa,ob,pa,pb
-  integer(kind=iwp) :: avail,integer_limit,np,rc,rc2,lu,comp,sym,opt,i,j,k,l,q,nmat,fs,fbasis(8),skip(8)
+  integer(kind=iwp) :: avail,integer_limit,np,rc,rc2,lu,comp,sym,opt,q,nmat,fs,fbasis(8),skip(8)
   logical(kind=iwp) :: exists,SquareFlag
   logical :: opened,oneopened
   character(len=8) :: label
