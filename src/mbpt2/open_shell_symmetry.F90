@@ -17,7 +17,7 @@ module Open_Shell_Symmetry
 ! Conventional metrics and transformed vectors are replicated: computation
 ! is distributed. This is an in-core implementation, with memory checks.
 use Definitions, only: wp,iwp,u6,RtoB
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+use MBPT2_Global, only: MBPT2_All_Finite
 use Constants, only: Zero, One, Three, Four, Five, Half
 use Symmetry_Info, only: Mul
 use Index_Functions, only: nTri_Elem
@@ -175,7 +175,7 @@ integer(kind=iwp) :: MPIFlag
   corr=sum(e)+sum(singles)
   total=eref+corr
   MPIFlag=0
-  if (logical(.not.ieee_is_finite(total),kind=kind(.true.))) MPIFlag=1
+  if (logical(.not.MBPT2_All_Finite(total),kind=kind(.true.))) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) then
     message='Nonfinite symmetry MP2 total energy.'
@@ -363,7 +363,7 @@ subroutine ReadReference(ierr)
     call Get_dScalar('SCF energy',eref)
   end if
   ierr=1
-  if (.not.ieee_is_finite(eref)) return
+  if (.not.MBPT2_All_Finite(eref)) return
   if (any(occ(1:ns,1)>bs(1:ns)).or.any(occ(1:ns,2)>bs(1:ns))) return
   nb=sum(bs(1:ns))
   if (nb<=0) return
@@ -390,7 +390,7 @@ subroutine ReadReference(ierr)
     if (n/=sum(bs(1:ns)**2)) return
     call mma_allocate(buffer,n,label='symmetry coefficient input')
     call Get_dArray(trim(label),buffer,n)
-    if (.not.all(ieee_is_finite(buffer))) then
+    if (.not.MBPT2_All_Finite(buffer)) then
       call mma_deallocate(buffer)
       return
     end if
@@ -411,7 +411,7 @@ subroutine ReadReference(ierr)
     if (.not.found) return
     if (l/=nb) return
     call Get_dArray(trim(label),eps(:,spin),nb)
-    if (.not.all(ieee_is_finite(eps(:,spin)))) return
+    if (.not.MBPT2_All_Finite(eps(:,spin))) return
   end do
   ierr=0
 end subroutine ReadReference
@@ -589,7 +589,7 @@ integer(kind=iwp) :: MPIFlag
           opt=2
           if (rc==0) then
             if (nmat/=1) rc=1
-            if (.not.all(ieee_is_finite(buffer(1:nq)))) rc=1
+            if (.not.MBPT2_All_Finite(buffer(1:nq))) rc=1
           end if
           MPIFlag=0
           if (rc/=0) MPIFlag=1
@@ -729,7 +729,7 @@ integer(kind=iwp) :: MPIFlag
         t=symorb(nu)
         blocks(g)%vectors(p,j)=ao%SB(s)%A3(mu-off(s),nu-off(t),1)
       end do
-      if (.not.all(ieee_is_finite(blocks(g)%vectors(:,j)))) then
+      if (.not.MBPT2_All_Finite(blocks(g)%vectors(:,j))) then
         rc=1
         exit
       end if
@@ -781,7 +781,7 @@ integer(kind=iwp) :: MPIFlag
       if (pass==2) label='Mltpl  0'
       call RdOne(rc,opt,label,comp,buffer,sy)
       if (rc/=0) exit
-      if (.not.all(ieee_is_finite(buffer(1:np)))) then
+      if (.not.MBPT2_All_Finite(buffer(1:np))) then
         rc=1
         exit
       end if
@@ -876,7 +876,7 @@ integer(kind=iwp) :: MPIFlag
   end do
   message='Symmetry ROHF orbitals are not orthonormal.'
   MPIFlag=0
-  if (logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.))) MPIFlag=1
+  if (logical((.not.MBPT2_All_Finite(grad)).or.(grad>1.0e-7_wp),kind=kind(.true.))) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) exit build_fock
   fock(:,:,:)=Zero
@@ -939,14 +939,14 @@ integer(kind=iwp) :: MPIFlag
   if (((nProcs>1).and.Is_Real_Par())) call GADGOp(fock(1,1,1),size(fock),'+')
   message='Nonfinite symmetry reference Fock matrix.'
   MPIFlag=0
-  if (logical(.not.all(ieee_is_finite(fock)),kind=kind(.true.))) MPIFlag=1
+  if (logical(.not.MBPT2_All_Finite(fock),kind=kind(.true.))) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) exit build_fock
   call Get_dScalar('PotNuc',enuc)
   check=enuc+Half*(sum(density(:,:,1)*(hcore+fock(:,:,1)))+sum(density(:,:,2)*(hcore+fock(:,:,2))))
   message='Reconstructed symmetry ROHF energy differs from RASSCF.'
   MPIFlag=0
-  if (logical((.not.ieee_is_finite(check)).or.(abs(check-eref)>1.0e-7_wp), &
+  if (logical((.not.MBPT2_All_Finite(check)).or.(abs(check-eref)>1.0e-7_wp), &
                        kind=kind(.true.))) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) exit build_fock
@@ -974,7 +974,7 @@ integer(kind=iwp) :: MPIFlag
   grad=maxval(abs(vec))
   message='ROHF symmetry stationarity check failed: tighten RASSCF convergence.'
   MPIFlag=0
-  if (logical((.not.ieee_is_finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.))) MPIFlag=1
+  if (logical((.not.MBPT2_All_Finite(grad)).or.(grad>1.0e-5_wp),kind=kind(.true.))) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) exit build_fock
   ierr=0
@@ -1113,7 +1113,7 @@ integer(kind=iwp) :: MPIFlag
             if ((spin==other).and.(b>=a)) cycle
             if (Mul(symorb(i),symorb(a))/=Mul(symorb(j),symorb(b))) cycle
             den=eps(i,spin)+eps(j,other)-eps(a,spin)-eps(b,other)
-            if ((.not.ieee_is_finite(den)).or.(abs(den)<=1.0e-12_wp)) then
+            if ((.not.MBPT2_All_Finite(den)).or.(abs(den)<=1.0e-12_wp)) then
               ierr=1
               cycle
             end if
@@ -1125,7 +1125,7 @@ integer(kind=iwp) :: MPIFlag
       end do
     end do
   end do
-  if (.not.all(ieee_is_finite(energy))) ierr=1
+  if (.not.MBPT2_All_Finite(energy)) ierr=1
   message='Invalid denominator or nonfinite symmetry doubles energy.'
   MPIFlag=0
   if (ierr/=0) MPIFlag=1

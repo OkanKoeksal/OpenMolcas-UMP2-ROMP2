@@ -15,7 +15,7 @@ module ROMP2_Cholesky
 ! Serial/MPI C1 Cholesky lifecycle shared by the reference-Fock and doubles
 ! stages. AO vectors are streamed twice: no four-index AO tensor is built.
 use Definitions, only: wp,iwp,u6,RtoB
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+use MBPT2_Global, only: MBPT2_All_Finite
 use Constants, only: Zero, One, Two, Three
 use Para_Info, only: nProcs,MyRank,Is_Real_Par
 use Data_Structures, only: SBA_Type,Allocate_DT,Deallocate_DT
@@ -169,7 +169,7 @@ subroutine ReadVector(iVec,ierr,Message)
   end if
   ierr=1
   Message='Nonfinite ROMP2 AO Cholesky vector.'
-  if (.not.all(ieee_is_finite(AO%SB(1)%A3))) return
+  if (.not.MBPT2_All_Finite(AO%SB(1)%A3)) return
   Scale=max(One,maxval(abs(AO%SB(1)%A3(:,:,1))))
   Message='ROMP2 AO Cholesky vector is not a full symmetric matrix.'
   if (maxval(abs(AO%SB(1)%A3(:,:,1)-transpose(AO%SB(1)%A3(:,:,1))))>1.0e-12_wp*Scale) return
@@ -244,7 +244,7 @@ integer(kind=iwp) :: MPIFlag
   end if
   MPIFlag=0
   if (logical( &
-      (.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB))), &
+      (.not.MBPT2_All_Finite(FA)).or.(.not.MBPT2_All_Finite(FB)), &
       kind=kind(.true.))) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) then
@@ -319,7 +319,7 @@ integer(kind=iwp) :: MPIFlag
     end if
     MPIFlag=0
     if (logical( &
-        (.not.all(ieee_is_finite(La))).or.(.not.all(ieee_is_finite(Lb))), &
+        (.not.MBPT2_All_Finite(La)).or.(.not.MBPT2_All_Finite(Lb)), &
         kind=kind(.true.))) MPIFlag=1
     if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
     if (MPIFlag/=0) then
@@ -329,7 +329,7 @@ integer(kind=iwp) :: MPIFlag
       call UMP2_Energy(La,Lb,EOccA,EVirA,EOccB,EVirB,nOA,nVA,nOB,nVB,nGlobal,DenTol,EAA,EBB,EAB,ierr)
       if (ierr/=0) then
         Message='ROMP2 Cholesky doubles failed: check orbital-energy denominators.'
-      else if (.not.all(ieee_is_finite([EAA,EBB,EAB]))) then
+      else if (.not.MBPT2_All_Finite([EAA,EBB,EAB])) then
         ierr=1
         Message='Nonfinite ROMP2 Cholesky doubles energy.'
       else

@@ -26,7 +26,7 @@
 module ROMP2_Conventional
 
 use Definitions, only: wp, iwp, u6, RtoB
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+use MBPT2_Global, only: MBPT2_All_Finite
 use Constants, only: Zero, One
 use stdalloc, only: mma_allocate, mma_deallocate, mma_maxDBLE
 
@@ -96,7 +96,7 @@ subroutine ROMP2_Conventional_Energy(ierr,Message)
     EBB = Components(2)
     EAB = Components(3)
   end if
-  if ((ierr == 0) .and. (.not. all(ieee_is_finite([EAA,EBB,EAB])))) then
+  if ((ierr == 0) .and. (.not. MBPT2_All_Finite([EAA,EBB,EAB]))) then
     ierr = _RC_GENERAL_ERROR_
     Message = 'Nonfinite globally reduced conventional ROMP2 energy.'
   end if
@@ -180,7 +180,7 @@ contains
       Message = 'Conventional ROMP2 requires a valid C1 reference.'
       return
     end if
-    if ((.not. ieee_is_finite(DenTol)) .or. (DenTol <= Zero)) then
+    if ((.not. MBPT2_All_Finite(DenTol)) .or. (DenTol <= Zero)) then
       ierr = _RC_INPUT_ERROR_
       Message = 'Invalid ROMP2 denominator tolerance.'
       return
@@ -266,7 +266,7 @@ contains
         if ((ReadRC /= 0) .or. (nMat /= 1)) then
           ierr = _RC_IO_ERROR_READ_
           Message = 'Failed to read a complete conventional AO-pair row.'
-        else if (.not. all(ieee_is_finite(Buf(1:nPair)))) then
+        else if (.not. MBPT2_All_Finite(Buf(1:nPair))) then
           ierr = _RC_IO_ERROR_READ_
           Message = 'Nonfinite value in stored AO integrals.'
         end if
@@ -279,7 +279,7 @@ contains
         call UnpackPair(Buf(1:nPair),AO,nBas)
         call DGEMM_('N','N',nBas,nO,nBas,One,AO,nBas,C(1,nFro+1),nBas,Zero,Tmp,nBas)
         call DGEMM_('T','N',nV,nO,nBas,One,C(1,nOcc+1),nBas,Tmp,nBas,Zero,OV,nV)
-        if (.not. all(ieee_is_finite(OV))) then
+        if (.not. MBPT2_All_Finite(OV)) then
           ierr = _RC_GENERAL_ERROR_
           Message = 'Nonfinite conventional half-transformed integrals.'
         end if
@@ -329,7 +329,7 @@ contains
         call DGEMM_('N','N',nBas,nO,nBas,One,AO,nBas,C(1,nFro+1),nBas,Zero,Tmp,nBas)
         call DGEMM_('T','N',nV,nO,nBas,One,C(1,nOcc+1),nBas,Tmp,nBas,Zero,G(1,1,b),nV)
       end do
-      if (.not. all(ieee_is_finite(G))) then
+      if (.not. MBPT2_All_Finite(G)) then
         ierr = _RC_GENERAL_ERROR_
         Message = 'Nonfinite conventional MO integrals.'
         exit OccupiedRight
@@ -340,7 +340,7 @@ contains
           do a=1,nV
             if (SameSpin .and. (a == b)) cycle
             Den = Eo(i)+EoR(j)-Ev(a)-EvR(b)
-            if ((.not. ieee_is_finite(Den)) .or. (abs(Den) <= DenTol)) then
+            if ((.not. MBPT2_All_Finite(Den)) .or. (abs(Den) <= DenTol)) then
               ierr = _RC_GENERAL_ERROR_
               Message = 'Invalid or near-zero conventional ROMP2 orbital-energy denominator.'
               exit OccupiedRight
@@ -356,7 +356,7 @@ contains
         end do
       end do
     end do OccupiedRight
-    if (.not. ieee_is_finite(Energy)) then
+    if (.not. MBPT2_All_Finite(Energy)) then
       ierr = _RC_GENERAL_ERROR_
       Message = 'Nonfinite conventional ROMP2 correlation energy.'
     end if

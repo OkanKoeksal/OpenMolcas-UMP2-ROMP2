@@ -15,7 +15,7 @@
 subroutine UMP2_Driver(ireturn)
 
 use Definitions, only: wp, iwp, u6, RtoB
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+use MBPT2_Global, only: MBPT2_All_Finite
 use Constants, only: Zero, Three
 use Para_Info, only: nProcs, MyRank, Is_Real_Par
 use Data_Structures, only: SBA_Type, Allocate_DT, Deallocate_DT
@@ -321,8 +321,8 @@ else
 
   end if
 
-  if ((.not. all(ieee_is_finite(La))) .or. &
-      (.not. all(ieee_is_finite(Lb)))) then
+  if ((.not. MBPT2_All_Finite(La)) .or. &
+      (.not. MBPT2_All_Finite(Lb))) then
     call Fail(_RC_GENERAL_ERROR_, &
               'Nonfinite globally assembled transformed Cholesky vectors.')
     return
@@ -348,7 +348,7 @@ end if
 ECorr = EAA+EBB+EAB
 ETotal = ESCF+ECorr
 
-if (.not. all(ieee_is_finite([ESCF,EAA,EBB,EAB,ECorr,ETotal]))) then
+if (.not. MBPT2_All_Finite([ESCF,EAA,EBB,EAB,ECorr,ETotal])) then
   call Fail(_RC_GENERAL_ERROR_,'UMP2 produced a nonfinite energy.')
   return
 end if

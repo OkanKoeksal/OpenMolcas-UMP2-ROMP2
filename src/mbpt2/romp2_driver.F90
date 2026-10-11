@@ -13,7 +13,7 @@
 
 subroutine ROMP2_Driver(ireturn)
 use Definitions, only: wp,iwp,u6
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+use MBPT2_Global, only: MBPT2_All_Finite
 use Constants, only: Zero
 use UMP2_Global
 use Para_Info, only: MyRank,Is_Real_Par,nProcs
@@ -178,7 +178,7 @@ ECorr=E1A+E1B+EAA+EBB+EAB
 ETotal=ESCF+ECorr
 ! Assignment converts the intrinsic result to the default logical kind
 ! expected by MBPT2_Any, including builds with promoted default kinds.
-NonfiniteTotal=.not.ieee_is_finite(ETotal)
+NonfiniteTotal=.not.MBPT2_All_Finite(ETotal)
 MPIFlag=0
 if (NonfiniteTotal) MPIFlag=1
 if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')

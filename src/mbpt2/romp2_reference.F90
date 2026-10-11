@@ -13,7 +13,7 @@
 
 module ROMP2_Reference
 use Definitions, only: wp, iwp, u6
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+use MBPT2_Global, only: MBPT2_All_Finite
 use Constants, only: Zero, One, Half
 use UMP2_Global
 use Para_Info, only: nProcs,MyRank,Is_Real_Par
@@ -99,7 +99,7 @@ integer(kind=iwp) :: MPIFlag
   call Get_dScalar('Last energy',ESCF)
   MPIFlag=0
   if (logical( &
-      (.not.all(ieee_is_finite(CAlpha))).or.(.not.ieee_is_finite(ESCF)), &
+      (.not.MBPT2_All_Finite(CAlpha)).or.(.not.MBPT2_All_Finite(ESCF)), &
       kind=kind(.true.))) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) return
@@ -221,7 +221,7 @@ contains
   end do
   MPIFlag=0
   if (logical( &
-      (.not.all(ieee_is_finite(MA))).or.(maxval(abs(MA))>1.0e-7_wp), &
+      (.not.MBPT2_All_Finite(MA)).or.(maxval(abs(MA))>1.0e-7_wp), &
       kind=kind(.true.))) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) then
@@ -255,7 +255,7 @@ contains
         opt=2
         if (rc==0) then
           if (nmat/=1) rc=1
-          if (.not.all(ieee_is_finite(Buf(1:np)))) rc=1
+          if (.not.MBPT2_All_Finite(Buf(1:np))) rc=1
         end if
         MPIFlag=0
         if (rc/=0) MPIFlag=1
@@ -320,7 +320,7 @@ contains
   end if
   MPIFlag=0
   if (logical( &
-      (.not.all(ieee_is_finite(FA))).or.(.not.all(ieee_is_finite(FB))), &
+      (.not.MBPT2_All_Finite(FA)).or.(.not.MBPT2_All_Finite(FB)), &
       kind=kind(.true.))) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) return
@@ -328,7 +328,7 @@ contains
   echeck=enuc+Half*(sum(DA*(H+FA))+sum(DB*(H+FB)))
   MPIFlag=0
   if (logical( &
-      (.not.ieee_is_finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp), &
+      (.not.MBPT2_All_Finite(echeck)).or.(abs(echeck-ESCF)>1.0e-7_wp), &
       kind=kind(.true.))) MPIFlag=1
   if ((nProcs>1).and.Is_Real_Par()) call gaIgOP_SCAL(MPIFlag,'max')
   if (MPIFlag/=0) then

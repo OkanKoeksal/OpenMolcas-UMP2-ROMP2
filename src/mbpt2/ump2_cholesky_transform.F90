@@ -14,7 +14,7 @@
 module UMP2_Cholesky_Transform
 
 use Definitions, only: wp, iwp
-use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+use MBPT2_Global, only: MBPT2_All_Finite
 use Constants, only: Zero, One
 use stdalloc, only: mma_allocate, mma_deallocate
 use linalg_mod, only: mult
@@ -150,17 +150,17 @@ subroutine UMP2_Transform_AO_Batch(LAO,La,Lb,ierr,Message)
     return
   end if
 
-  if (.not. all(ieee_is_finite(CAlpha))) then
+  if (.not. MBPT2_All_Finite(CAlpha)) then
     call Fail('Nonfinite alpha MO coefficients.')
     return
   end if
 
-  if (.not. all(ieee_is_finite(CBeta))) then
+  if (.not. MBPT2_All_Finite(CBeta)) then
     call Fail('Nonfinite beta MO coefficients.')
     return
   end if
 
-  if (.not. all(ieee_is_finite(LAO))) then
+  if (.not. MBPT2_All_Finite(LAO)) then
     call Fail('Nonfinite AO Cholesky vector elements.')
     return
   end if
@@ -247,8 +247,8 @@ subroutine UMP2_Transform_AO_Batch(LAO,La,Lb,ierr,Message)
 
   call mma_deallocate(Work)
 
-  if ((.not. all(ieee_is_finite(La))) .or. &
-      (.not. all(ieee_is_finite(Lb)))) then
+  if ((.not. MBPT2_All_Finite(La)) .or. &
+      (.not. MBPT2_All_Finite(Lb))) then
     call Fail('Nonfinite transformed Cholesky vector elements.')
     return
   end if
