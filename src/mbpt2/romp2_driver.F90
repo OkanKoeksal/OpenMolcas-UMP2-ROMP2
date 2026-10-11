@@ -39,7 +39,7 @@ end interface
 
 #include "warnings.h"
 integer(kind=iwp),intent(out) :: ireturn
-integer(kind=iwp) :: ierr,i,cleanupRC
+integer(kind=iwp) :: ierr,cleanupRC
 real(kind=wp) :: E1A,E1B,Singles(2)
 real(kind=wp),allocatable :: FA(:,:),FB(:,:)
 character(len=256) :: Message
