@@ -633,10 +633,7 @@ the same input selects ROMP2 automatically::
   2
 
 The preceding :program:`SEWARD` calculation determines whether
-conventional or Cholesky integrals are used. Complete conventional
-open-shell regression inputs are provided in
-:file:`test/standard/100.input` (UMP2) and
-:file:`test/standard/101.input` (ROMP2).
+conventional or Cholesky integrals are used.
 
 .. xmldoc:: <KEYWORD MODULE="MBPT2" NAME="SOSMP2" LEVEL="UNDOCUMENTED" KIND="SINGLE" />
 
