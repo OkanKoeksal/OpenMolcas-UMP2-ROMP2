@@ -1,0 +1,60 @@
+*-------------------------------------------------------------------------------
+* Molecule: Oxygen (O2), triplet
+* Basis: cc-pVDZ
+* Symmetry: C1
+* Features tested: shared GATEWAY/SEWARD, SCF(UHF), MBPT2(UMP2, FC2),
+*                  RASSCF(ROHF), MBPT2(ROMP2, FC2)
+* Responsible person: Okan Koeksal
+* Comments: UMP2 and semicanonical ROMP2 for the same oxygen geometry and
+*           conventional AO integrals. The RunFile is restored after UMP2
+*           so that the RASSCF reference starts from the SEWARD state.
+*-------------------------------------------------------------------------------
+>> export MOLCAS_PRINT=VERBOSE
+>> export MOLCAS_MEM=512
+
+&GATEWAY
+Title
+O2 UMP2 and ROMP2 C1 conventional FC2
+Coord
+2
+O2 fixed geometry, angstrom
+O 0.0 0.0  0.61150
+O 0.0 0.0 -0.59650
+Basis set
+cc-pVDZ
+Group = NoSym
+
+&SEWARD
+
+* Preserve the integral-generation RunFile
+>> COPY $Project.RunFile $Project.BaselineRunFile
+
+* UHF -> UMP2, two frozen occupied orbitals
+&SCF
+UHF
+Occupied
+9
+7
+
+&MBPT2
+Frozen
+2
+
+* Restore the common pre-SCF reference for an independent ROHF calculation
+>> COPY $Project.BaselineRunFile $Project.RunFile
+
+* Determinant RASSCF/ROHF -> semicanonical ROMP2, FC2
+&RASSCF
+Symmetry = 1
+Spin = 3
+Frozen = 0
+Inactive = 7
+Nactel = 2 0 0
+Ras2 = 2
+Deleted = 0
+Ciroot = 1 1 1
+
+&MBPT2
+Frozen
+2
+End of input
