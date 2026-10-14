@@ -50,7 +50,7 @@ subroutine ROMP2_Conventional_Energy(ierr,Message)
   character(len=*), intent(out) :: Message
   integer(kind=iwp) :: rc, CloseRC, FileNSym, FileBas(8), FileSkip(8)
   integer(kind=iwp) :: nPair, LuOrd, Workers, WorkRank
-  logical(kind=iwp) :: Exists, Square, IsCho, IsDF
+  logical(kind=iwp) :: Exists, OrdSquare, IsCho, IsDF
   logical :: Opened, Parallel, Reader, Reported
   real(kind=wp) :: Components(3)
   real(kind=wp), allocatable :: Half(:,:,:)
@@ -116,7 +116,7 @@ contains
       ierr = _RC_IO_ERROR_READ_
       Message = 'Unable to open conventional ORDINT integrals.'
     else
-      call GetOrd(rc,Square,FileNSym,FileBas,FileSkip)
+      call GetOrd(rc,OrdSquare,FileNSym,FileBas,FileSkip)
       if (rc /= 0) then
         ierr = _RC_IO_ERROR_READ_
         Message = 'Unable to read the ORDINT header.'
@@ -130,7 +130,7 @@ contains
   if (ierr /= 0) return
 
   ! In C1 both ordering modes expose nPair complete pair rows through
-  ! RdOrd_. Square controls symmetry-block duplication, not AO unpacking.
+  ! RdOrd_. The ORDINT square flag governs symmetry-block duplication.
 
   if ((nOA >= 2) .and. (nVA >= 2)) then
     call TransformRight(CAlpha,nOccA,nOA,nVA,nOA,nVA)
@@ -276,7 +276,7 @@ contains
       ! Sum the rank-local ORDINT contributions into the complete AO row.
       if (Parallel) call GADGOp(Buf,nPair,'+')
       if (mod(q-1,Workers) == WorkRank) then
-        call UnpackPair(Buf(1:nPair),AO,nBas)
+        call Square(Buf(1:nPair),AO,nBas,1,nBas)
         call DGEMM_('N','N',nBas,nO,nBas,One,AO,nBas,C(1,nFro+1),nBas,Zero,Tmp,nBas)
         call DGEMM_('T','N',nV,nO,nBas,One,C(1,nOcc+1),nBas,Tmp,nBas,Zero,OV,nV)
         if (.not. MBPT2_All_Finite(OV)) then
@@ -325,7 +325,7 @@ contains
     OccupiedRight: do j=1,nOR
       if (mod(j-1,Workers) /= WorkRank) cycle
       do b=1,nVR
-        call UnpackPair(Half(:,b,j),AO,nBas)
+        call Square(Half(:,b,j),AO,nBas,1,nBas)
         call DGEMM_('N','N',nBas,nO,nBas,One,AO,nBas,C(1,nFro+1),nBas,Zero,Tmp,nBas)
         call DGEMM_('T','N',nV,nO,nBas,One,C(1,nOcc+1),nBas,Tmp,nBas,Zero,G(1,1,b),nV)
       end do
@@ -367,19 +367,5 @@ contains
 
 end subroutine ROMP2_Conventional_Energy
 
-subroutine UnpackPair(Packed,AO,n)
-  integer(kind=iwp), intent(in) :: n
-  real(kind=wp), intent(in) :: Packed(:)
-  real(kind=wp), intent(out) :: AO(n,n)
-  integer(kind=iwp) :: mu,nu,q
-  q = 0
-  do mu=1,n
-    do nu=1,mu
-      q = q+1
-      AO(mu,nu) = Packed(q)
-      AO(nu,mu) = Packed(q)
-    end do
-  end do
-end subroutine UnpackPair
 
 end module ROMP2_Conventional
