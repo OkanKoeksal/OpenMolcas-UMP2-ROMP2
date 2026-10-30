@@ -165,7 +165,7 @@ if ((Method(1:5) == 'MBPT2') .or. &
 
   ! Validate the reference computed at the final geometry.
   select case (Method(1:5))
-  case ('UMP2 ')
+  case ('UMP2')
     call Get_cArray('Relax Method',FinalMethod,8)
     if (FinalMethod(1:7) /= 'UHF-SCF') then
       write(u6,*) 'Last_Energy: UMP2 requires a UHF-SCF reference; actual method: ',FinalMethod
@@ -190,7 +190,7 @@ if ((Method(1:5) == 'MBPT2') .or. &
 
   ! The driver must have produced the requested open-shell MP2 energy.
   select case (Method(1:5))
-  case ('UMP2 ')
+  case ('UMP2')
     call Get_cArray('Relax Method',FinalMethod,8)
     if (FinalMethod(1:4) /= 'UMP2') then
       write(u6,*) 'Last_Energy: MBPT2 did not produce a UMP2 energy; actual method: ',FinalMethod
