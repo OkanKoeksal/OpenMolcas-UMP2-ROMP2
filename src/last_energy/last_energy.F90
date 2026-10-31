@@ -157,22 +157,19 @@ else if (Method(1:8) == 'EXTERNAL') then
   end if
 end if
 
-! Open-shell MP2 final energies require a fresh reference at the final
-! geometry: UHF-SCF for UMP2 and determinant RASSCF/CASSCF for ROMP2.
-if ((Method(1:5) == 'MBPT2') .or. &
-    (Method(1:4) == 'UMP2') .or. &
-    (Method(1:5) == 'ROMP2')) then
+select case (Method(1:5))
+case ('MBPT2', 'UMP2', 'ROMP2')
 
-  ! Validate the reference computed at the final geometry.
+  if (Method(1:5) /= 'MBPT2') then
+    call Get_cArray('Relax Method',FinalMethod,8)
+  end if
   select case (Method(1:5))
   case ('UMP2')
-    call Get_cArray('Relax Method',FinalMethod,8)
     if (FinalMethod(1:7) /= 'UHF-SCF') then
       write(u6,*) 'Last_Energy: UMP2 requires a UHF-SCF reference; actual method: ',FinalMethod
       call Abend()
     end if
   case ('ROMP2')
-    call Get_cArray('Relax Method',FinalMethod,8)
     if ((FinalMethod(1:6) /= 'RASSCF') .and. (FinalMethod(1:6) /= 'CASSCF')) then
       write(u6,*) 'Last_Energy: ROMP2 requires a determinant RASSCF/CASSCF reference; actual method: ',FinalMethod
       call Abend()
@@ -188,22 +185,22 @@ if ((Method(1:5) == 'MBPT2') .or. &
     call Abend()
   end if
 
-  ! The driver must have produced the requested open-shell MP2 energy.
+  if (Method(1:5) /= 'MBPT2') then
+    call Get_cArray('Relax Method',FinalMethod,8)
+  end if
   select case (Method(1:5))
   case ('UMP2')
-    call Get_cArray('Relax Method',FinalMethod,8)
     if (FinalMethod(1:4) /= 'UMP2') then
       write(u6,*) 'Last_Energy: MBPT2 did not produce a UMP2 energy; actual method: ',FinalMethod
       call Abend()
     end if
   case ('ROMP2')
-    call Get_cArray('Relax Method',FinalMethod,8)
     if (FinalMethod(1:5) /= 'ROMP2') then
       write(u6,*) 'Last_Energy: MBPT2 did not produce a ROMP2 energy; actual method: ',FinalMethod
       call Abend()
     end if
   end select
-end if
+end select
 
 if (Method(1:5) == 'CCSDT') then
   call StartLight('motra')
