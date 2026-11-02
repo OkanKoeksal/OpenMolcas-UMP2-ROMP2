@@ -157,24 +157,22 @@ else if (Method(1:8) == 'EXTERNAL') then
   end if
 end if
 
-select case (Method(1:5))
+select case (trim(Method))
 case ('MBPT2', 'UMP2', 'ROMP2')
 
-  if (Method(1:5) /= 'MBPT2') then
+  if (trim(Method) /= 'MBPT2') then
     call Get_cArray('Relax Method',FinalMethod,8)
-  end if
-  select case (Method(1:5))
-  case ('UMP2')
-    if (FinalMethod(1:7) /= 'UHF-SCF') then
-      write(u6,*) 'Last_Energy: UMP2 requires a UHF-SCF reference; actual method: ',FinalMethod
-      call Abend()
-    end if
-  case ('ROMP2')
-    if ((FinalMethod(1:6) /= 'RASSCF') .and. (FinalMethod(1:6) /= 'CASSCF')) then
+    if (trim(Method) == 'UMP2') then
+      if (FinalMethod(1:7) /= 'UHF-SCF') then
+        write(u6,*) 'Last_Energy: UMP2 requires a UHF-SCF reference; actual method: ',FinalMethod
+        call Abend()
+      end if
+    else if ((FinalMethod(1:6) /= 'RASSCF') .and. &
+             (FinalMethod(1:6) /= 'CASSCF')) then
       write(u6,*) 'Last_Energy: ROMP2 requires a determinant RASSCF/CASSCF reference; actual method: ',FinalMethod
       call Abend()
     end if
-  end select
+  end if
 
   call StartLight('mbpt2')
   call Disable_Spool()
@@ -185,21 +183,14 @@ case ('MBPT2', 'UMP2', 'ROMP2')
     call Abend()
   end if
 
-  if (Method(1:5) /= 'MBPT2') then
+  if (trim(Method) /= 'MBPT2') then
     call Get_cArray('Relax Method',FinalMethod,8)
+    if (FinalMethod(1:len_trim(Method)) /= trim(Method)) then
+      write(u6,*) 'Last_Energy: MBPT2 did not produce a ', &
+                   trim(Method), ' energy; actual method: ',FinalMethod
+      call Abend()
+    end if
   end if
-  select case (Method(1:5))
-  case ('UMP2')
-    if (FinalMethod(1:4) /= 'UMP2') then
-      write(u6,*) 'Last_Energy: MBPT2 did not produce a UMP2 energy; actual method: ',FinalMethod
-      call Abend()
-    end if
-  case ('ROMP2')
-    if (FinalMethod(1:5) /= 'ROMP2') then
-      write(u6,*) 'Last_Energy: MBPT2 did not produce a ROMP2 energy; actual method: ',FinalMethod
-      call Abend()
-    end if
-  end select
 end select
 
 if (Method(1:5) == 'CCSDT') then
